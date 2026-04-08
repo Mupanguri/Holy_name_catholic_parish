@@ -57,7 +57,8 @@
       "no-unused-vars": "warn",
       "react-hooks/exhaustive-deps": "warn",
       "no-throw-literal": "warn",
-      "import/no-anonymous-default-export": "warn"
+      "import/no-anonymous-default-export": "warn",
+      "no-useless-escape": "warn"
     }
   },
   "browserslist": {
