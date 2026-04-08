@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link, useOutletContext } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth, ROLES } from '../../context/AuthContext';
 import {
   PAGE_TEMPLATES,
@@ -105,8 +105,7 @@ const SectionEditor = ({
     onChange(section.id, fieldId, value);
   };
 
-  const handleAddField = () => {
-  const { theme, colors } = useOutletContext() || {};
+const handleAddField = () => {
     const newFieldId = `custom_${Date.now()}`;
     onChange(section.id, 'addField', { id: newFieldId, type: 'text', label: 'New Field' });
   };
