@@ -95,7 +95,7 @@ function App() {
       <Toaster richColors position="top-right" />
       <AuthProvider>
         <CMSProvider>
-          <Router basename="/HolyName">
+          <Router>
             <Routes>
               {/* ===================== ADMIN ROUTES ===================== */}
 

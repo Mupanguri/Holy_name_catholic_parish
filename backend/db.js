@@ -2,24 +2,18 @@ require('dotenv').config();
 const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
 
-// Get database name from environment
-const dbName = process.env.DB_NAME || 'soccom';
+// Supabase connection - uses connection string from Supabase dashboard
+// Format: postgresql://postgres:[password]@db.[project-ref].supabase.co:5432/postgres
+const supabaseUrl = process.env.SUPABASE_PROJECT_REF || 'gajhlhtgyutqxcyzpydv';
+const supabasePassword = process.env.SUPABASE_PASSWORD || 't9bQbB!@j5FW+5i';
 
-// Validate required environment variables
-if (!process.env.DB_USER || !process.env.DB_PASSWORD) {
-  console.error('ERROR: Database credentials must be provided via environment variables');
-  console.error('Required: DB_USER, DB_PASSWORD');
-  console.error('Optional: DB_HOST, DB_PORT, DB_NAME');
-}
-
-// Create connection pool - require environment variables for production
 const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 5432,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: dbName,
+  connectionString: `postgresql://postgres:${supabasePassword}@db.${supabaseUrl}.supabase.co:5432/postgres`,
+  ssl: { rejectUnauthorized: false }
 });
+
+// Get database name from environment (default: holy_name_parish)
+const dbName = process.env.DB_NAME || 'holy_name_parish';
 
 // Create database if not exists (for initial setup only)
 const createDatabase = async () => {
