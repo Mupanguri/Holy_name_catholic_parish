@@ -1,5 +1,6 @@
 require('dotenv').config();
 const { Pool } = require('pg');
+const bcrypt = require('bcrypt');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -14,11 +15,8 @@ const dbName = process.env.DB_NAME || 'holy_name_parish';
 const createDatabase = async () => {
   // First connect to postgres to check/create the database
   const adminPool = new Pool({
-    host: process.env.DB_HOST || 'localhost',
-    port: process.env.DB_PORT || 5432,
-    user: process.env.DB_USER || '',
-    password: process.env.DB_PASSWORD || '',
-    database: 'postgres', // Only this needs to connect to default db
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
   });
 
   try {
@@ -53,20 +51,15 @@ const initDatabase = async () => {
 
     if (result.rows.length >= 7) {
       console.log('All tables verified successfully!');
+      // Always seed users - will skip if they exist
+      await seedDatabase();
       return pool;
     }
 
     // If tables don't exist, create them
     console.log('Tables not found, creating...');
-    const dbPool = new Pool({
-      host: process.env.DB_HOST || 'localhost',
-      port: process.env.DB_PORT || 5432,
-      user: process.env.DB_USER,
-      password: process.env.DB_PASSWORD,
-      database: dbName,
-    });
-
-    await createTables(dbPool);
+    await createTables(pool);
+    await seedDatabase();
     return pool;
   } catch (error) {
     console.error('Error initializing database:', error.message);
@@ -315,7 +308,7 @@ const createTables = async dbPool => {
     }
 
     // Seed initial data
-    await seedDatabase(dbPool);
+    await seedDatabase();
 
     return dbPool;
   } catch (error) {
@@ -325,35 +318,38 @@ const createTables = async dbPool => {
 };
 
 // Seed initial data
-const seedDatabase = async dbPool => {
-  // Check if users already exist
-  const userCheck = await dbPool.query('SELECT COUNT(*) FROM users');
+const seedDatabase = async () => {
+  try {
+    // Check if users already exist
+    const userCheck = await pool.query('SELECT COUNT(*) FROM users');
+    console.log('DEBUG: User count:', userCheck.rows[0].count);
 
-  if (parseInt(userCheck.rows[0].count) === 0) {
-    // Use environment variables for seeds or generate random passwords
-    const adminPass = process.env.SEED_ADMIN_PASSWORD || 'ChangeMe123!';
-    const soccomPass = process.env.SEED_SOCCOM_PASSWORD || 'ChangeMe456!';
+    if (parseInt(userCheck.rows[0].count) === 0) {
+      // Use environment variables for seeds or generate random passwords
+      const adminPass = process.env.SEED_ADMIN_PASSWORD || 'admin123';
+      const soccomPass = process.env.SEED_SOCCOM_PASSWORD || 'soccom123';
 
-    // Warn about default passwords
-    if (!process.env.SEED_ADMIN_PASSWORD) {
-      console.warn(
-        'WARNING: Using default seed password for admin. Set SEED_ADMIN_PASSWORD in .env for production!'
-      );
-    }
+      // Hash passwords before seeding
+      const hashedAdminPassword = await bcrypt.hash(adminPass, 12);
+      const hashedSoccomPassword = await bcrypt.hash(soccomPass, 12);
 
-    // Hash passwords before seeding
-    const hashedAdminPassword = await bcrypt.hash(adminPass, 12);
-    const hashedSoccomPassword = await bcrypt.hash(soccomPass, 12);
-
-    // Seed default users
-    const seedUsers = `
+      // Seed default users
+      const seedUsers = `
             INSERT INTO users (username, password, name, email, role) VALUES
             ('superadmin', $1, 'Father John', 'superadmin@holyname.org', 'super_admin'),
             ('soccom', $2, 'SocCom Admin', 'soccom@holyname.org', 'soccom_admin')
             ON CONFLICT (username) DO NOTHING;
         `;
-    await dbPool.query(seedUsers, [hashedAdminPassword, hashedSoccomPassword]);
-    console.log('Default users seeded!');
+      await pool.query(seedUsers, [hashedAdminPassword, hashedSoccomPassword]);
+      console.log('Default users seeded!');
+      console.log('Login with: superadmin / admin123');
+    } else {
+      console.log('Users already exist, skipping seed');
+    }
+  } catch (error) {
+    console.log('Seed error (may be expected):', error.message);
+  }
+};
     console.log('IMPORTANT: Change these passwords immediately in production!');
   }
 };

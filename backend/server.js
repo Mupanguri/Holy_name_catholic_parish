@@ -2040,15 +2040,11 @@ const startServer = async () => {
     logger.info('Starting server...');
 
     logger.info('Checking/creating database...');
-    if (process.env.NODE_ENV !== 'production') {
-      await db.createDatabase();
-    }
+    await db.createDatabase();
     logger.success('Database ready!');
 
     logger.info('Initializing database tables...');
-    if (process.env.NODE_ENV !== 'production') {
-      await db.initDatabase();
-    }
+    await db.initDatabase();
     logger.success('Database tables initialized!');
 
     app.listen(PORT, () => {
