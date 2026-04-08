@@ -385,7 +385,9 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
   }
 
   try {
+    console.log('DEBUG: Login for user:', username, 'password length:', password?.length);
     const result = await db.pool.query('SELECT * FROM users WHERE username = $1', [username]);
+    console.log('DEBUG: User found:', result.rows.length > 0);
 
     if (result.rows.length === 0) {
       logger.auth('LOGIN_FAILED', null, { username, reason: 'User not found' });
@@ -393,7 +395,9 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     }
 
     const user = result.rows[0];
+    console.log('DEBUG: Stored password hash:', user.password.substring(0, 20) + '...');
     const isValidPassword = await bcrypt.compare(password, user.password);
+    console.log('DEBUG: Password valid:', isValidPassword);
 
     if (!isValidPassword) {
       logger.auth('LOGIN_FAILED', user.id, { username, reason: 'Invalid password' });
@@ -414,6 +418,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       token,
     });
   } catch (error) {
+    console.log('DEBUG: Login error:', error.message);
     logger.error('Login error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
