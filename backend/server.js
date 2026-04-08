@@ -254,11 +254,18 @@ const userManagementLimiter = rateLimit({
 // ============ CORS CONFIGURATION ============
 const allowedOrigins = [
   'http://localhost:3000',
-  process.env.PROD_URL || 'https://holy-name-catholic-parish-htwr.vercel.app'
+  'https://holy-name-catholic-parish-htwr.vercel.app',
+  'https://holy-name-catholic-parish.onrender.com'
 ].filter(Boolean);
 
 const corsOptions = {
-  origin: allowedOrigins,
+  origin: function(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With', 'Origin'],
@@ -266,9 +273,10 @@ const corsOptions = {
 };
 
 // ============ MIDDLEWARE ============
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(generalLimiter);
 app.use(logger.middleware());
-app.use(cors(corsOptions));
 app.use(bodyParser.json());
 
 // Request logging middleware
