@@ -1,0 +1,33 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "server.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "server.js"
+    },
+    {
+      "src": "/uploads/(.*)",
+      "dest": "frontend/public/uploads/$1"
+    }
+  ],
+  "env": {
+    "SUPABASE_PROJECT_REF": "@supabase_project_ref",
+    "SUPABASE_PASSWORD": "@supabase_password",
+    "JWT_SECRET": "@jwt_secret",
+    "DB_NAME": "holy_name_parish"
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" }
+      ]
+    }
+  ]
+}
