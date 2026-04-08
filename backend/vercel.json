@@ -17,8 +17,7 @@
     }
   ],
   "env": {
-    "SUPABASE_PROJECT_REF": "@supabase_project_ref",
-    "SUPABASE_PASSWORD": "@supabase_password",
+    "DATABASE_URL": "@database_url",
     "JWT_SECRET": "@jwt_secret",
     "DB_NAME": "holy_name_parish"
   },

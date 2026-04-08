@@ -1,18 +1,13 @@
 require('dotenv').config();
 const { Pool } = require('pg');
-const bcrypt = require('bcrypt');
-
-// Supabase connection - uses connection string from Supabase dashboard
-// Format: postgresql://postgres:[password]@db.[project-ref].supabase.co:5432/postgres
-const supabaseUrl = process.env.SUPABASE_PROJECT_REF || 'gajhlhtgyutqxcyzpydv';
-const supabasePassword = process.env.SUPABASE_PASSWORD || 't9bQbB!@j5FW+5i';
 
 const pool = new Pool({
-  connectionString: `postgresql://postgres:${supabasePassword}@db.${supabaseUrl}.supabase.co:5432/postgres`,
-  ssl: { rejectUnauthorized: false }
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
 });
 
-// Get database name from environment (default: holy_name_parish)
 const dbName = process.env.DB_NAME || 'holy_name_parish';
 
 // Create database if not exists (for initial setup only)
