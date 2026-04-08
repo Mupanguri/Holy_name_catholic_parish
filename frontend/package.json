@@ -3,6 +3,11 @@
   "name": "church-website",
   "version": "0.1.0",
   "private": true,
+  "overrides": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "ajv": "^8.12.0"
+  },
   "dependencies": {
     "@fortawesome/fontawesome-svg-core": "^6.7.2",
     "@fortawesome/free-brands-svg-icons": "^6.7.2",
@@ -23,8 +28,6 @@
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^13.5.0",
     "ajv": "^7.2.4",
-    "ajv-keywords": "^5.1.0",
-    "church-website": "file:",
     "date-fns": "^4.1.0",
     "nodemailer": "^6.9.16",
     "react": "^19.0.0",
@@ -49,7 +52,13 @@
     "extends": [
       "react-app",
       "react-app/jest"
-    ]
+    ],
+    "rules": {
+      "no-unused-vars": "warn",
+      "react-hooks/exhaustive-deps": "warn",
+      "no-throw-literal": "warn",
+      "import/no-anonymous-default-export": "warn"
+    }
   },
   "browserslist": {
     "production": [
