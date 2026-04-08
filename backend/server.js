@@ -252,9 +252,13 @@ const userManagementLimiter = rateLimit({
 
 // ============ SECURITY: CORS ============
 // ============ CORS CONFIGURATION ============
-// Allow all origins for development - simpler approach
+const allowedOrigins = [
+  'http://localhost:3000',
+  process.env.PROD_URL || 'https://holy-name-catholic-parish-htwr.vercel.app'
+].filter(Boolean);
+
 const corsOptions = {
-  origin: true, // Allow all origins in development
+  origin: allowedOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With', 'Origin'],
