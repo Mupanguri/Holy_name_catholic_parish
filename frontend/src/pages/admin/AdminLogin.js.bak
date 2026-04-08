@@ -1,0 +1,311 @@
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
+
+const AdminLogin = () => {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const { login } = useAuth();
+  const navigate = useNavigate();
+
+  const handleSubmit = async e => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    const result = await login(username, password);
+    if (result.success) {
+      navigate('/admin/dashboard');
+    } else {
+      setError(result.error);
+    }
+    setLoading(false);
+  };
+
+  return (
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@300;400;500;600&display=swap');
+
+        *, *::before, *::after { box-sizing: border-box; }
+
+        .al-root {
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 24px;
+          font-family: 'Inter', sans-serif;
+          background: #0b1220;
+          position: relative;
+          overflow: hidden;
+        }
+
+        .al-root::before {
+          content: '';
+          position: fixed;
+          inset: 0;
+          background:
+            radial-gradient(ellipse 70% 55% at 15% 80%, rgba(27,58,107,0.55) 0%, transparent 65%),
+            radial-gradient(ellipse 50% 40% at 85% 20%, rgba(42,96,153,0.35) 0%, transparent 60%),
+            radial-gradient(ellipse 40% 30% at 50% 50%, rgba(201,168,76,0.06) 0%, transparent 70%);
+          pointer-events: none;
+        }
+
+        .al-grid {
+          position: fixed;
+          inset: 0;
+          background-image:
+            linear-gradient(rgba(168,204,232,0.03) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(168,204,232,0.03) 1px, transparent 1px);
+          background-size: 48px 48px;
+          pointer-events: none;
+        }
+
+        .al-card {
+          position: relative;
+          z-index: 1;
+          width: 100%;
+          max-width: 400px;
+          background: rgba(14, 22, 40, 0.92);
+          border: 1px solid rgba(168, 204, 232, 0.12);
+          border-radius: 20px;
+          overflow: hidden;
+          box-shadow:
+            0 0 0 1px rgba(168,204,232,0.06),
+            0 24px 80px rgba(0,0,0,0.5),
+            0 4px 16px rgba(0,0,0,0.3);
+        }
+
+        .al-card-accent {
+          height: 2px;
+          background: linear-gradient(90deg, #1B3A6B 0%, #2a6099 40%, #C9A84C 75%, transparent 100%);
+        }
+
+        .al-header {
+          padding: 36px 36px 28px;
+          text-align: center;
+          border-bottom: 1px solid rgba(168,204,232,0.07);
+        }
+
+        .al-emblem {
+          width: 64px;
+          height: 64px;
+          margin: 0 auto 20px;
+          border-radius: 16px;
+          background: linear-gradient(135deg, rgba(27,58,107,0.6) 0%, rgba(42,96,153,0.5) 100%);
+          border: 1px solid rgba(168,204,232,0.2);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 26px;
+          box-shadow: 0 4px 24px rgba(27,58,107,0.3), inset 0 1px 0 rgba(168,204,232,0.15);
+        }
+
+        .al-title {
+          font-family: 'Cinzel', serif;
+          font-size: 16px;
+          font-weight: 600;
+          color: #e8edf4;
+          letter-spacing: 0.04em;
+          margin-bottom: 5px;
+          line-height: 1.4;
+        }
+
+        .al-sub {
+          font-size: 11px;
+          color: rgba(168,204,232,0.45);
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
+        }
+
+        .al-body { padding: 28px 36px 32px; }
+
+        .al-divider {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 24px;
+        }
+        .al-divider-line { flex: 1; height: 1px; background: rgba(168,204,232,0.1); }
+        .al-divider-cross {
+          color: rgba(201,168,76,0.5);
+          font-size: 13px;
+          letter-spacing: 0.08em;
+          font-family: 'Cinzel', serif;
+          font-weight: 500;
+        }
+
+        .al-error {
+          background: rgba(220,38,38,0.08);
+          border: 1px solid rgba(220,38,38,0.2);
+          color: #fca5a5;
+          padding: 11px 14px;
+          border-radius: 10px;
+          font-size: 13px;
+          margin-bottom: 20px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .al-field { margin-bottom: 18px; }
+
+        .al-label {
+          display: block;
+          font-size: 11px;
+          font-weight: 500;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          color: rgba(168,204,232,0.5);
+          margin-bottom: 8px;
+        }
+
+        .al-input {
+          width: 100%;
+          background: rgba(168,204,232,0.05);
+          border: 1px solid rgba(168,204,232,0.12);
+          border-radius: 10px;
+          padding: 12px 16px;
+          font-size: 14px;
+          color: #e8edf4;
+          outline: none;
+          transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+          font-family: 'Inter', sans-serif;
+        }
+        .al-input::placeholder { color: rgba(168,204,232,0.2); }
+        .al-input:focus {
+          border-color: rgba(42,96,153,0.6);
+          background: rgba(168,204,232,0.08);
+          box-shadow: 0 0 0 3px rgba(42,96,153,0.15);
+        }
+
+        .al-btn {
+          width: 100%;
+          padding: 13px;
+          background: linear-gradient(135deg, #1B3A6B 0%, #2a6099 60%, #1e4d7a 100%);
+          color: #e8edf4;
+          font-family: 'Cinzel', serif;
+          font-size: 12.5px;
+          font-weight: 600;
+          letter-spacing: 0.12em;
+          border: 1px solid rgba(168,204,232,0.15);
+          border-radius: 10px;
+          cursor: pointer;
+          transition: all 0.2s;
+          margin-top: 8px;
+          box-shadow: 0 4px 20px rgba(27,58,107,0.35), inset 0 1px 0 rgba(168,204,232,0.1);
+          position: relative;
+          overflow: hidden;
+        }
+        .al-btn::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(180deg, rgba(255,255,255,0.06) 0%, transparent 100%);
+          pointer-events: none;
+        }
+        .al-btn:hover:not(:disabled) {
+          background: linear-gradient(135deg, #234d8a 0%, #336aaa 60%, #2a609e 100%);
+          box-shadow: 0 6px 28px rgba(27,58,107,0.45);
+          transform: translateY(-1px);
+        }
+        .al-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+        .al-back {
+          display: block;
+          text-align: center;
+          margin-top: 22px;
+          font-size: 12px;
+          color: rgba(168,204,232,0.3);
+          text-decoration: none;
+          letter-spacing: 0.04em;
+          transition: color 0.2s;
+          font-family: 'Inter', sans-serif;
+        }
+        .al-back:hover { color: rgba(168,204,232,0.7); }
+
+        .al-footer {
+          padding: 14px 36px 20px;
+          text-align: center;
+          border-top: 1px solid rgba(168,204,232,0.06);
+        }
+        .al-footer-text {
+          font-size: 10.5px;
+          color: rgba(168,204,232,0.2);
+          letter-spacing: 0.06em;
+          font-family: 'Cinzel', serif;
+        }
+      `}</style>
+
+      <div className="al-root">
+        <div className="al-grid" />
+        <div className="al-card">
+          <div className="al-card-accent" />
+
+          <div className="al-header">
+            <div className="al-emblem">⚜️</div>
+            <div className="al-title">Holy Name Catholic Church</div>
+            <div className="al-sub">Administration Portal</div>
+          </div>
+
+          <div className="al-body">
+            <div className="al-divider">
+              <div className="al-divider-line" />
+              <span className="al-divider-cross">✝</span>
+              <div className="al-divider-line" />
+            </div>
+
+            {error && (
+              <div className="al-error">
+                <span>⚠</span>
+                <span>{error}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit}>
+              <div className="al-field">
+                <label className="al-label">Username</label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={e => setUsername(e.target.value)}
+                  className="al-input"
+                  placeholder="Enter your username"
+                  required
+                />
+              </div>
+
+              <div className="al-field">
+                <label className="al-label">Password</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  className="al-input"
+                  placeholder="Enter your password"
+                  required
+                />
+              </div>
+
+              <button type="submit" disabled={loading} className="al-btn">
+                {loading ? 'Signing In...' : 'Sign In'}
+              </button>
+            </form>
+
+            <a href="http://localhost:3000/HolyName" className="al-back">
+              ← Back to Website
+            </a>
+          </div>
+
+          <div className="al-footer">
+            <div className="al-footer-text">Secure Admin Access · Holy Name Parish</div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+};
+
+export default AdminLogin;

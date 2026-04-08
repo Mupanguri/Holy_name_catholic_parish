@@ -1,0 +1,65 @@
+[
+  {
+    "id": "694c84d0-ecfe-40ca-ad23-2467c7961f49",
+    "timestamp": "2026-03-09T10:37:47.477Z",
+    "action": "REQUEST",
+    "user": "system",
+    "method": "GET",
+    "path": "/api/tasks",
+    "status": 200,
+    "duration": "2ms"
+  },
+  {
+    "id": "3a68ac84-e2a4-410f-9cc0-c63ece4455dc",
+    "timestamp": "2026-03-09T10:37:47.468Z",
+    "action": "REQUEST",
+    "user": "system",
+    "method": "GET",
+    "path": "/api/media",
+    "status": 200,
+    "duration": "2ms"
+  },
+  {
+    "id": "a337b4c1-ad60-41bc-88af-132f6c113b92",
+    "timestamp": "2026-03-09T10:37:47.464Z",
+    "action": "REQUEST",
+    "user": "system",
+    "method": "GET",
+    "path": "/api/posts",
+    "status": 200,
+    "duration": "1ms"
+  },
+  {
+    "id": "c8534f9c-5284-423b-8f8b-0a7ff03708fa",
+    "timestamp": "2026-03-09T10:37:47.460Z",
+    "action": "REQUEST",
+    "user": "system",
+    "method": "GET",
+    "path": "/api/pages",
+    "status": 200,
+    "duration": "4ms"
+  },
+  {
+    "id": "fed82d30-9774-4d66-9f72-1e1ff501c3f2",
+    "timestamp": "2026-03-09T10:37:47.446Z",
+    "action": "REQUEST",
+    "user": "system",
+    "method": "POST",
+    "path": "/api/auth/login",
+    "status": 200,
+    "duration": "10ms"
+  },
+  {
+    "id": "4321fe4d-2bd5-4297-af14-308798def676",
+    "timestamp": "2026-03-09T10:37:47.436Z",
+    "action": "LOGIN",
+    "user": "soccom"
+  },
+  {
+    "id": "ca583428-46c9-474e-8561-53eb76b15626",
+    "timestamp": "2026-03-09T10:33:52.581Z",
+    "action": "SERVER_START",
+    "user": "system",
+    "port": 5000
+  }
+]

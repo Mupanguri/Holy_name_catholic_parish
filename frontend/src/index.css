@@ -1,0 +1,144 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Lato:wght@300;400;600;700&display=swap');
+
+/* Global Reset - Colors defined in GlobalTheme.js */
+:root {
+  --parish-primary: #1B3A6B;
+  --parish-secondary: #005A9C;
+  --parish-tertiary: #BA0021;
+  --parish-gold: #C9A84C;
+}
+
+body {
+  font-family: 'Lato', sans-serif;
+}
+
+/* Focus styles for accessibility */
+*:focus-visible {
+  outline: 2px solid #1B3A6B;
+  outline-offset: 2px;
+}
+
+/* Smooth transitions for all interactive elements */
+button,
+a,
+[role="button"] {
+  transition: all 0.2s ease-in-out;
+}
+
+/* Radix UI Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* Radix UI Dropdown Menu Styles */
+[data-radix-popper-content-wrapper] {
+  z-index: 50 !important;
+}
+
+/* ============================================ */
+/* Church Theme Utilities (from GlobalTheme.js) */
+/* ============================================ */
+
+/* Parchment Background */
+.hn-parchment-page {
+  background: linear-gradient(135deg, #FDF5E6 0%, #FAF0E6 100%);
+  min-height: 100vh;
+}
+
+/* Parchment container with texture */
+.hn-parchment-container {
+  background: linear-gradient(135deg, #FDF5E6 0%, #FAF0E6 100%);
+  border-left: 6px solid #1B3A6B;
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+/* Parchment texture overlay */
+.hn-parchment-texture {
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%238B4513' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  opacity: 0.1;
+  pointer-events: none;
+}
+
+/* Decorative top bar */
+.hn-parchment-bar {
+  height: 4px;
+  width: 100%;
+  background: linear-gradient(90deg, #1B3A6B 0%, #C9A84C 50%, #1B3A6B 100%);
+}
+
+/* Section Headings */
+.hn-section-heading {
+  font-family: 'Cinzel', serif;
+  font-size: clamp(22px, 3vw, 34px);
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+  background: linear-gradient(90deg, #0f1923 0%, #1B3A6B 40%, #2a6099 65%, #C9A84C 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hn-section-sub {
+  font-family: 'Lato', sans-serif;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: center;
+  color: rgba(42,96,153,0.55);
+  margin-bottom: 36px;
+}
+
+/* Decorative Rule with Cross */
+.hn-section-rule {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 36px;
+}
+
+.hn-rule-line {
+  height: 1px;
+  width: 80px;
+  background: linear-gradient(90deg, transparent, #1B3A6B, transparent);
+}
+
+.hn-rule-cross {
+  color: #C9A84C;
+  font-size: 18px;
+}
+
+/* Parish Colors Utility Classes */
+.bg-parish-primary { background-color: #1B3A6B; }
+.bg-parish-secondary { background-color: #005A9C; }
+.bg-parish-tertiary { background-color: #BA0021; }
+.bg-parish-gold { background-color: #C9A84C; }
+
+.text-parish-primary { color: #1B3A6B; }
+.text-parish-secondary { color: #005A9C; }
+.text-parish-tertiary { color: #BA0021; }
+.text-parish-gold { color: #C9A84C; }
+
+.border-parish-primary { border-color: #1B3A6B; }
+.border-parish-gold { border-color: #C9A84C; }

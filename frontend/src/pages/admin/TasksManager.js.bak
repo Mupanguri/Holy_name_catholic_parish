@@ -1,0 +1,372 @@
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../context/AuthContext';
+import toast from '../../constants/toast';
+
+const TasksManager = () => {
+  const {
+    tasks,
+    getMyTasks,
+    createTask,
+    updateTask,
+    deleteTask,
+    currentUser,
+    getAllUsers,
+    loadUsers,
+  } = useAuth();
+  const [showModal, setShowModal] = useState(false);
+  const [filter, setFilter] = useState('all');
+
+  const [taskForm, setTaskForm] = useState({
+    title: '',
+    description: '',
+    priority: 'medium',
+    dueDate: '',
+    assigneeId: '',
+    assigneeName: '',
+  });
+
+  useEffect(() => {
+    if (currentUser?.role === 'super_admin') {
+      loadUsers();
+    }
+  }, [loadUsers, currentUser?.role]);
+
+  const allUsers = getAllUsers() || [];
+  const myTasks = getMyTasks();
+
+  const getFilteredTasks = () => {
+    let filteredTasks = myTasks;
+    if (currentUser?.role === 'super_admin') {
+      filteredTasks = tasks;
+    }
+    if (filter === 'completed') return filteredTasks.filter(t => t.status === 'completed');
+    if (filter === 'pending') return filteredTasks.filter(t => t.status === 'pending');
+    return filteredTasks;
+  };
+
+  const allTasks = getFilteredTasks();
+
+  const handleCreateTask = async e => {
+    e.preventDefault();
+    try {
+      const selectedUser = allUsers.find(u => u.id === parseInt(taskForm.assigneeId));
+      await createTask({
+        ...taskForm,
+        assigneeId: taskForm.assigneeId || currentUser.id,
+        assigneeName: selectedUser ? selectedUser.name : currentUser.name,
+      });
+      setTaskForm({ title: '', description: '', priority: 'medium', dueDate: '', assigneeId: '', assigneeName: '' });
+      setShowModal(false);
+    } catch (error) {
+      toast.error('Failed to create task: ' + error.message);
+    }
+  };
+
+  const handleToggleStatus = async (taskId, currentStatus) => {
+    await updateTask(taskId, { status: currentStatus === 'completed' ? 'pending' : 'completed' });
+  };
+
+  const handleDelete = async taskId => {
+    if (window.confirm('Delete this task?')) {
+      await deleteTask(taskId);
+    }
+  };
+
+  const getPriorityStyle = priority => {
+    const map = {
+      high: { bg: 'rgba(220,38,38,0.1)', border: 'rgba(220,38,38,0.2)', color: 'rgba(248,113,113,0.9)' },
+      medium: { bg: 'rgba(201,168,76,0.1)', border: 'rgba(201,168,76,0.2)', color: 'rgba(251,191,36,0.9)' },
+      low: { bg: 'rgba(22,163,74,0.1)', border: 'rgba(22,163,74,0.2)', color: 'rgba(74,222,128,0.9)' },
+    };
+    return map[priority] || map.medium;
+  };
+
+  const totalTasks = myTasks.length;
+  const pendingCount = myTasks.filter(t => t.status === 'pending').length;
+  const completedCount = myTasks.filter(t => t.status === 'completed').length;
+
+  const tabs = [
+    { key: 'all', label: 'All', color: '#a8cce8', bg: 'rgba(42,96,153,0.18)' },
+    { key: 'pending', label: 'Pending', color: '#fbbf24', bg: 'rgba(201,168,76,0.15)' },
+    { key: 'completed', label: 'Completed', color: '#4ade80', bg: 'rgba(22,163,74,0.15)' },
+  ];
+
+  return (
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@300;400;500;600&display=swap');
+        *, *::before, *::after { box-sizing: border-box; }
+
+        .tm-root { padding: 28px; font-family: 'Inter', sans-serif; color: #e8edf4; min-height: 100vh; background: #0f1624; }
+
+        .tm-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; gap: 16px; flex-wrap: wrap; }
+        .tm-title { font-family: 'Cinzel', serif; font-size: 20px; font-weight: 600; color: #e8edf4; letter-spacing: 0.02em; margin-bottom: 4px; }
+        .tm-sub { font-size: 13px; color: rgba(168,204,232,0.35); }
+
+        .tm-new-btn {
+          display: inline-flex; align-items: center; gap: 7px;
+          padding: 10px 18px; border-radius: 8px;
+          background: rgba(27,58,107,0.7); border: 1px solid rgba(42,96,153,0.3);
+          color: #a8cce8; font-size: 13px; font-weight: 500;
+          cursor: pointer; border: none; font-family: 'Inter', sans-serif; transition: all 0.16s;
+        }
+        .tm-new-btn:hover { background: rgba(42,96,153,0.5); }
+        .tm-new-btn { border: 1px solid rgba(42,96,153,0.3); }
+
+        .tm-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 22px; }
+        .tm-stat {
+          background: rgba(255,255,255,0.025);
+          border: 1px solid rgba(168,204,232,0.07);
+          border-radius: 12px; padding: 18px 20px;
+        }
+        .tm-stat-val { font-size: 28px; font-weight: 700; color: #e8edf4; letter-spacing: -0.02em; line-height: 1; margin-bottom: 6px; }
+        .tm-stat-label { font-size: 12px; color: rgba(168,204,232,0.3); }
+
+        .tm-panel { background: rgba(255,255,255,0.025); border: 1px solid rgba(168,204,232,0.07); border-radius: 12px; overflow: hidden; }
+
+        .tm-toolbar { display: flex; gap: 6px; padding: 14px 16px; border-bottom: 1px solid rgba(168,204,232,0.06); flex-wrap: wrap; }
+        .tm-tab {
+          padding: 7px 16px; border-radius: 7px; font-size: 12.5px; font-weight: 500;
+          border: 1px solid transparent; cursor: pointer; background: none;
+          font-family: 'Inter', sans-serif; color: rgba(168,204,232,0.4); transition: all 0.14s;
+        }
+        .tm-tab:hover { background: rgba(168,204,232,0.06); color: rgba(168,204,232,0.7); }
+
+        .tm-list { }
+        .tm-item {
+          display: flex; align-items: flex-start; gap: 14px;
+          padding: 16px 18px; border-bottom: 1px solid rgba(168,204,232,0.05);
+          transition: background 0.14s;
+        }
+        .tm-item:last-child { border-bottom: none; }
+        .tm-item:hover { background: rgba(168,204,232,0.02); }
+
+        .tm-checkbox {
+          flex-shrink: 0; width: 20px; height: 20px;
+          border-radius: 6px; border: none; cursor: pointer;
+          display: flex; align-items: center; justify-content: center;
+          margin-top: 2px; transition: all 0.16s;
+        }
+        .tm-checkbox-done { background: rgba(22,163,74,0.2); border: 1px solid rgba(22,163,74,0.3); color: #4ade80; }
+        .tm-checkbox-pending { background: none; border: 1.5px solid rgba(168,204,232,0.2); }
+        .tm-checkbox-pending:hover { border-color: rgba(22,163,74,0.4); }
+
+        .tm-content { flex: 1; min-width: 0; }
+        .tm-item-top { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; flex-wrap: wrap; }
+        .tm-item-title { font-size: 13.5px; font-weight: 500; color: #e8edf4; }
+        .tm-item-title.done { text-decoration: line-through; color: rgba(168,204,232,0.3); }
+
+        .tm-priority {
+          display: inline-block; padding: 2px 9px; border-radius: 5px;
+          font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em;
+          text-transform: capitalize;
+        }
+        .tm-item-desc { font-size: 12.5px; color: rgba(168,204,232,0.35); margin-bottom: 8px; line-height: 1.5; }
+        .tm-item-meta { display: flex; gap: 16px; font-size: 11.5px; color: rgba(168,204,232,0.25); flex-wrap: wrap; }
+
+        .tm-delete {
+          flex-shrink: 0; background: none; border: none; cursor: pointer;
+          color: rgba(168,204,232,0.2); padding: 4px;
+          border-radius: 6px; display: flex; align-items: center; justify-content: center;
+          transition: background 0.14s, color 0.14s;
+        }
+        .tm-delete:hover { background: rgba(220,38,38,0.1); color: #f87171; }
+
+        .tm-empty { padding: 48px 24px; text-align: center; color: rgba(168,204,232,0.2); font-size: 13.5px; }
+
+        /* Modal */
+        .tm-modal-overlay {
+          position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+          display: flex; align-items: center; justify-content: center;
+          z-index: 50; padding: 24px; backdrop-filter: blur(4px);
+        }
+        .tm-modal {
+          background: #12192a; border: 1px solid rgba(168,204,232,0.1);
+          border-radius: 16px; width: 100%; max-width: 460px;
+          padding: 28px; max-height: 90vh; overflow-y: auto;
+          box-shadow: 0 24px 80px rgba(0,0,0,0.5);
+        }
+        .tm-modal-title { font-family: 'Cinzel', serif; font-size: 17px; font-weight: 600; color: #e8edf4; margin-bottom: 22px; letter-spacing: 0.02em; }
+        .tm-field { margin-bottom: 16px; }
+        .tm-label { display: block; font-size: 11px; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(168,204,232,0.35); margin-bottom: 7px; }
+        .tm-input {
+          width: 100%; background: rgba(168,204,232,0.05); border: 1px solid rgba(168,204,232,0.1);
+          border-radius: 8px; padding: 11px 14px; font-size: 13.5px; color: #e8edf4; outline: none;
+          font-family: 'Inter', sans-serif; transition: border-color 0.18s, box-shadow 0.18s;
+        }
+        .tm-input::placeholder { color: rgba(168,204,232,0.2); }
+        .tm-input:focus { border-color: rgba(42,96,153,0.5); box-shadow: 0 0 0 3px rgba(42,96,153,0.1); }
+        .tm-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .tm-modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+        .tm-modal-btn {
+          padding: 10px 20px; border-radius: 8px; font-size: 13px; font-weight: 500;
+          cursor: pointer; border: none; font-family: 'Inter', sans-serif; transition: all 0.15s;
+        }
+        .tm-modal-btn-cancel { background: rgba(168,204,232,0.06); border: 1px solid rgba(168,204,232,0.1); color: rgba(168,204,232,0.5); }
+        .tm-modal-btn-cancel:hover { background: rgba(168,204,232,0.1); color: rgba(168,204,232,0.8); }
+        .tm-modal-btn-primary { background: rgba(27,58,107,0.7); border: 1px solid rgba(42,96,153,0.3); color: #a8cce8; }
+        .tm-modal-btn-primary:hover { background: rgba(42,96,153,0.5); }
+      `}</style>
+
+      <div className="tm-root">
+        <div className="tm-header">
+          <div>
+            <div className="tm-title">Task Management</div>
+            <div className="tm-sub">Manage your tasks and assignments</div>
+          </div>
+          <button onClick={() => setShowModal(true)} className="tm-new-btn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+            New Task
+          </button>
+        </div>
+
+        <div className="tm-stats">
+          <div className="tm-stat">
+            <div className="tm-stat-val">{totalTasks}</div>
+            <div className="tm-stat-label">Total Tasks</div>
+          </div>
+          <div className="tm-stat">
+            <div className="tm-stat-val" style={{ color: '#fbbf24' }}>{pendingCount}</div>
+            <div className="tm-stat-label">Pending</div>
+          </div>
+          <div className="tm-stat">
+            <div className="tm-stat-val" style={{ color: '#4ade80' }}>{completedCount}</div>
+            <div className="tm-stat-label">Completed</div>
+          </div>
+        </div>
+
+        <div className="tm-panel">
+          <div className="tm-toolbar">
+            {tabs.map(t => (
+              <button
+                key={t.key}
+                onClick={() => setFilter(t.key)}
+                className="tm-tab"
+                style={filter === t.key ? { background: t.bg, color: t.color, borderColor: `${t.color}33` } : {}}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="tm-list">
+            {tasks.length === 0 ? (
+              <div className="tm-empty">No tasks yet. Create your first task.</div>
+            ) : allTasks.length === 0 ? (
+              <div className="tm-empty">No tasks match this filter.</div>
+            ) : (
+              allTasks.map(task => {
+                const ps = getPriorityStyle(task.priority);
+                const done = task.status === 'completed';
+                return (
+                  <div key={task.id} className="tm-item">
+                    <button
+                      onClick={() => handleToggleStatus(task.id, task.status)}
+                      className={`tm-checkbox ${done ? 'tm-checkbox-done' : 'tm-checkbox-pending'}`}
+                    >
+                      {done && (
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20,6 9,17 4,12" /></svg>
+                      )}
+                    </button>
+                    <div className="tm-content">
+                      <div className="tm-item-top">
+                        <span className={`tm-item-title${done ? ' done' : ''}`}>{task.title}</span>
+                        <span className="tm-priority" style={{ background: ps.bg, border: `1px solid ${ps.border}`, color: ps.color }}>
+                          {task.priority}
+                        </span>
+                      </div>
+                      {task.description && <div className="tm-item-desc">{task.description}</div>}
+                      <div className="tm-item-meta">
+                        <span>Created: {task.createdAt}</span>
+                        {task.dueDate && <span>Due: {task.dueDate}</span>}
+                        <span>By: {task.createdByName}</span>
+                      </div>
+                    </div>
+                    <button onClick={() => handleDelete(task.id)} className="tm-delete">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="3,6 5,6 21,6" /><path d="M19,6l-1,14a2,2,0,0,1-2,2H8a2,2,0,0,1-2-2L5,6" /><path d="M10,11v6" /><path d="M14,11v6" /><path d="M9,6V4a1,1,0,0,1,1-1h4a1,1,0,0,1,1,1v2" />
+                      </svg>
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {showModal && (
+          <div className="tm-modal-overlay">
+            <div className="tm-modal">
+              <div className="tm-modal-title">Create New Task</div>
+              <form onSubmit={handleCreateTask}>
+                <div className="tm-field">
+                  <label className="tm-label">Task Title <span style={{ color: '#f87171' }}>*</span></label>
+                  <input
+                    type="text"
+                    value={taskForm.title}
+                    onChange={e => setTaskForm({ ...taskForm, title: e.target.value })}
+                    className="tm-input"
+                    placeholder="Enter task title"
+                    required
+                  />
+                </div>
+                <div className="tm-field">
+                  <label className="tm-label">Description</label>
+                  <textarea
+                    value={taskForm.description}
+                    onChange={e => setTaskForm({ ...taskForm, description: e.target.value })}
+                    rows={3}
+                    className="tm-input"
+                    placeholder="Describe the task..."
+                    style={{ resize: 'vertical' }}
+                  />
+                </div>
+                <div className="tm-field">
+                  <label className="tm-label">Assign To</label>
+                  <select
+                    value={taskForm.assigneeId}
+                    onChange={e => {
+                      const user = allUsers.find(u => u.id === parseInt(e.target.value));
+                      setTaskForm({ ...taskForm, assigneeId: e.target.value, assigneeName: user ? user.name : '' });
+                    }}
+                    className="tm-input"
+                  >
+                    <option value="">Select team member...</option>
+                    {allUsers.map(user => (
+                      <option key={user.id} value={user.id}>{user.name} ({user.role})</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="tm-grid-2">
+                  <div className="tm-field">
+                    <label className="tm-label">Priority</label>
+                    <select value={taskForm.priority} onChange={e => setTaskForm({ ...taskForm, priority: e.target.value })} className="tm-input">
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                    </select>
+                  </div>
+                  <div className="tm-field">
+                    <label className="tm-label">Due Date</label>
+                    <input
+                      type="date"
+                      value={taskForm.dueDate}
+                      onChange={e => setTaskForm({ ...taskForm, dueDate: e.target.value })}
+                      className="tm-input"
+                    />
+                  </div>
+                </div>
+                <div className="tm-modal-footer">
+                  <button type="button" onClick={() => setShowModal(false)} className="tm-modal-btn tm-modal-btn-cancel">Cancel</button>
+                  <button type="submit" className="tm-modal-btn tm-modal-btn-primary">Create Task</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+};
+
+export default TasksManager;

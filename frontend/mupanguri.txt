@@ -1,0 +1,1199 @@
+# Holy Name Church — Phase 2 Refactor Instructions
+## Collaborative Pages · Seasonal Oak Tree · Events System · Bulletins & Notices
+
+> Read and apply **after** the Phase 1 (COMMUNITY_TREE_REFACTOR.md) changes are in place.
+> Work through each numbered section in order.
+
+---
+
+## 0. npm installs
+
+```bash
+# PDF viewer for bulletins in-browser
+npm install react-pdf @react-pdf/renderer
+
+# Real toast notifications (replaces the console stub in toast.js)
+npm install sonner
+
+# Date utilities (for seasonal tree logic)
+npm install date-fns
+```
+
+No new backend packages required.
+
+---
+
+## 1. Seed existing community pages into the database
+
+### 1a. New migration file — `backend/seedCommunityPages.js`
+
+Create this file. Run it **once** with `node backend/seedCommunityPages.js` after the Phase 1 DB migration.
+
+```javascript
+require('dotenv').config();
+const { Pool } = require('pg');
+
+const pool = new Pool({
+  host: process.env.DB_HOST || 'localhost',
+  port: process.env.DB_PORT || 5432,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME || 'soccom',
+});
+
+// All 6 branches with their known communities from CMSConstants
+const COMMUNITY_PAGES = [
+  // ── SECTIONS ──────────────────────────────────────────────
+  { branch: 'sections', slug: 'parachute-regiment',  title: 'Parachute Regiment',      level: 1 },
+  { branch: 'sections', slug: 'avondale-west',       title: 'Avondale West',            level: 1 },
+  { branch: 'sections', slug: 'bloomingdale',        title: 'Bloomingdale',             level: 1 },
+  { branch: 'sections', slug: 'meyrick-park',        title: 'Meyrick Park',             level: 1 },
+  { branch: 'sections', slug: 'cotswold-hills',      title: 'Cotswold Hills',           level: 1 },
+  { branch: 'sections', slug: 'mabelreign-central',  title: 'Mabelreign Central',       level: 1 },
+  { branch: 'sections', slug: 'haig-park',           title: 'Haig Park',               level: 1 },
+
+  // ── CHOIR ─────────────────────────────────────────────────
+  { branch: 'choir', slug: 'english-choir',  title: 'English Choir', level: 1 },
+  { branch: 'choir', slug: 'shona-choir',   title: 'Shona Choir',   level: 1 },
+
+  // ── COMMITTEES ────────────────────────────────────────────
+  { branch: 'committees', slug: 'parish-council',         title: 'Parish Council',                   level: 1 },
+  { branch: 'committees', slug: 'youth-council',          title: 'Youth Council',                    level: 1 },
+  { branch: 'committees', slug: 'altar-servers',          title: 'Altar Servers',                    level: 1 },
+  { branch: 'committees', slug: 'missionary-childhood',   title: 'Missionary Childhood',             level: 1 },
+  { branch: 'committees', slug: 'family-apostolate',      title: 'Family Apostolate Committee',      level: 1 },
+
+  // ── SUPPORT TEAMS ─────────────────────────────────────────
+  { branch: 'support-teams', slug: 'soccom',          title: 'SOCCOM',                               level: 1 },
+  { branch: 'support-teams', slug: 'catechesis',      title: 'Holy Name Catechesis',                 level: 1 },
+  { branch: 'support-teams', slug: 'ccr',             title: 'Catholic Charismatic Renewal (CCR)',   level: 1 },
+  { branch: 'support-teams', slug: 'special-events',  title: 'Special Events Committee',             level: 1 },
+
+  // ── ADULT GUILDS ──────────────────────────────────────────
+  { branch: 'adult-guilds', slug: 'st-anne',          title: 'St Anne Guild',                          level: 1 },
+  { branch: 'adult-guilds', slug: 'chemwoyo',         title: 'Moyo Musande (Sacred Heart) — Adults',   level: 1 },
+  { branch: 'adult-guilds', slug: 'st-joachim',       title: 'St Joachim Guild',                       level: 1 },
+  { branch: 'adult-guilds', slug: 'st-joseph',        title: 'St Joseph Guild',                        level: 1 },
+  { branch: 'adult-guilds', slug: 'maria-hosi-yedenga', title: 'Maria Hosi Yedenga',                   level: 1 },
+
+  // ── YOUTH GUILDS ──────────────────────────────────────────
+  { branch: 'youth-guilds', slug: 'st-peter-mary',    title: "St's Peter and Mary",                    level: 1 },
+  { branch: 'youth-guilds', slug: 'agnes-alois',      title: 'St Agnes and Alois',                     level: 1 },
+  { branch: 'youth-guilds', slug: 'musande',          title: 'Moyo Musande (Sacred Heart) — Youth',    level: 1 },
+  { branch: 'youth-guilds', slug: 'st-mary-youth',    title: 'St Mary Youth (Chita cha Maria)',         level: 1 },
+  { branch: 'youth-guilds', slug: 'cya',              title: 'Catholic Youth Association (CYA)',        level: 1 },
+];
+
+async function seed() {
+  console.log('Seeding community pages...');
+  for (const p of COMMUNITY_PAGES) {
+    // Find branch root id
+    const branchRow = await pool.query(
+      "SELECT id FROM pages WHERE level = 0 AND branch = $1",
+      [p.branch]
+    );
+    if (branchRow.rows.length === 0) {
+      console.warn(`Branch root not found for: ${p.branch}. Run Phase 1 seed first.`);
+      continue;
+    }
+    const parentId = branchRow.rows[0].id;
+    const path = `/communities/${p.branch}/${p.slug}`;
+
+    // Skip if already exists
+    const exists = await pool.query(
+      "SELECT id FROM pages WHERE branch = $1 AND slug = $2 AND level = 1",
+      [p.branch, p.slug]
+    );
+    if (exists.rows.length > 0) {
+      console.log(`  SKIP (exists): ${p.title}`);
+      continue;
+    }
+
+    await pool.query(
+      `INSERT INTO pages (title, slug, path, parent_id, branch, level, status, visible, content, author_name)
+       VALUES ($1, $2, $3, $4, $5, $6, 'draft', false, $7, 'System')`,
+      [
+        p.title, p.slug, path, parentId, p.branch, p.level,
+        JSON.stringify([{ id: 'intro', label: 'Introduction', data: { description: '' } }])
+      ]
+    );
+    console.log(`  SEEDED: ${p.title} → ${path}`);
+  }
+  console.log('Done. All community pages seeded as draft.');
+  await pool.end();
+}
+
+seed().catch(e => { console.error(e); process.exit(1); });
+```
+
+Run it:
+
+```bash
+node backend/seedCommunityPages.js
+```
+
+---
+
+## 2. Backend — `backend/server.js` changes for collaborative pages
+
+### 2a. Update `GET /api/pages` to include branch/level filters
+
+Replace the existing `/api/pages` handler body with:
+
+```javascript
+app.get("/api/pages", async (req, res) => {
+  try {
+    const page   = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit  = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+    const offset = (page - 1) * limit;
+    const branch = req.query.branch || null;
+    const level  = req.query.level  !== undefined ? parseInt(req.query.level) : null;
+
+    let where = "WHERE 1=1";
+    const params = [];
+    if (branch) { params.push(branch); where += ` AND branch = $${params.length}`; }
+    if (level !== null) { params.push(level); where += ` AND level = $${params.length}`; }
+
+    const dataParams  = [...params, limit, offset];
+    const countParams = [...params];
+
+    const [dataResult, countResult] = await Promise.all([
+      db.pool.query(
+        `SELECT * FROM pages ${where} ORDER BY created_at DESC LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}`,
+        dataParams
+      ),
+      db.pool.query(`SELECT COUNT(*) FROM pages ${where}`, countParams),
+    ]);
+
+    res.json({
+      data: dataResult.rows,
+      pagination: {
+        page, limit,
+        total: parseInt(countResult.rows[0].count),
+        totalPages: Math.ceil(countResult.rows[0].count / limit),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+```
+
+### 2b. Update `PUT /api/pages/:id` — allow any soccom admin to edit shared pages
+
+Change `requireSoccomAdminOnly` to `requireSoccomAdmin` for the PUT route so that all soccom admins (not just the original author) can edit shared community pages:
+
+```javascript
+// PUT /api/pages/:id — any SocCom Admin can edit community pages
+app.put("/api/pages/:id", authenticate, requireSoccomAdmin, validate(schemas.pageUpdate), async (req, res) => {
+  // ... existing body unchanged
+});
+```
+
+### 2c. Add bulletin/PDF fields to posts table — add to the migration block
+
+Inside `initDatabase()`, add after the existing migration lines:
+
+```javascript
+// Bulletin fields
+try {
+  await pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS is_bulletin BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS is_pinned   BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS pdf_url     TEXT`);
+  await pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS event_date  DATE`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_posts_bulletin ON posts(is_bulletin)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_posts_pinned   ON posts(is_pinned)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_posts_event_date ON posts(event_date)`);
+  console.log('Bulletin columns verified.');
+} catch (e) {
+  console.log('Bulletin migration note:', e.message);
+}
+```
+
+### 2d. Update `POST /api/posts` and `PUT /api/posts/:id` — accept new bulletin fields
+
+In the `postCreate` schema, add:
+
+```javascript
+postCreate: Joi.object({
+  title:       Joi.string().min(1).max(255).required(),
+  excerpt:     Joi.string().max(500).allow("", null),
+  content:     Joi.string().max(100000).allow("", null),
+  category:    Joi.string().max(100).allow("", null),
+  images:      Joi.array().items(Joi.string()),
+  visible:     Joi.boolean().default(false),
+  status:      Joi.string().valid("draft", "published").default("draft"),
+  is_bulletin: Joi.boolean().default(false),
+  is_pinned:   Joi.boolean().default(false),
+  pdf_url:     Joi.string().max(500).allow("", null),
+  event_date:  Joi.string().allow("", null), // ISO date string
+}),
+```
+
+In the `POST /api/posts` handler replace the INSERT query:
+
+```javascript
+const { title, excerpt, content, category, images, visible, status, is_bulletin, is_pinned, pdf_url, event_date } = req.validatedBody;
+const result = await db.pool.query(
+  `INSERT INTO posts (title, excerpt, content, category, images, author_id, author_name,
+    status, visible, is_bulletin, is_pinned, pdf_url, event_date)
+   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+  [title, excerpt, content, category, images || [], req.user.id, req.user.name,
+   status || "draft", visible || false,
+   is_bulletin || false, is_pinned || false, pdf_url || null, event_date || null]
+);
+```
+
+In the `PUT /api/posts/:id` handler, similarly update the UPDATE query:
+
+```javascript
+const { title, excerpt, content, category, images, is_bulletin, is_pinned, pdf_url, event_date } = req.validatedBody;
+const result = await db.pool.query(
+  `UPDATE posts SET title=$1, excerpt=$2, content=$3, category=$4, images=$5,
+    is_bulletin=$6, is_pinned=$7, pdf_url=$8, event_date=$9,
+    updated_at=CURRENT_TIMESTAMP WHERE id=$10 RETURNING *`,
+  [title, excerpt, content, category, images || [],
+   is_bulletin || false, is_pinned || false, pdf_url || null, event_date || null,
+   req.params.id]
+);
+```
+
+Add `is_bulletin`, `is_pinned`, `pdf_url`, and `event_date` to `postUpdate` schema similarly.
+
+### 2e. New public endpoint — bulletins and events for homepage
+
+```javascript
+// GET /api/posts/bulletins — public, returns pinned bulletins + upcoming events
+app.get("/api/posts/bulletins", async (req, res) => {
+  try {
+    const result = await db.pool.query(`
+      SELECT * FROM posts
+      WHERE (status = 'live' OR visible = true)
+        AND (is_bulletin = true OR category = 'Parish Notice' OR category = 'Event Report')
+      ORDER BY is_pinned DESC, is_bulletin DESC, event_date ASC NULLS LAST, created_at DESC
+      LIMIT 30
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+```
+
+### 2f. PDF upload endpoint
+
+Add this route to `server.js` (uses the existing `upload` multer instance):
+
+```javascript
+// POST /api/posts/upload-pdf — SocCom uploads a bulletin PDF
+app.post("/api/posts/upload-pdf", authenticate, requireSoccomAdmin, upload.single("pdf"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    const url = "/uploads/" + req.file.filename;
+    res.json({ success: true, url });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+```
+
+---
+
+## 3. Update `src/services/api.js`
+
+Add to `postsAPI`:
+
+```javascript
+getBulletins: async () => {
+  const r = await fetch(`${API_BASE_URL}/api/posts/bulletins`);
+  return r.json();
+},
+
+uploadPdf: async (formData) => {
+  const r = await fetch(`${API_BASE_URL}/api/posts/upload-pdf`, {
+    method: 'POST',
+    headers: { ...getAuthHeaders() },
+    body: formData,
+  });
+  return r.json();
+},
+```
+
+---
+
+## 4. Update `src/context/AuthContext.jsx`
+
+### 4a. Load shared pages for all SocCom admins
+
+Inside `loadAllData`, **replace** the line `pagesAPI.getAll(1, 1000)` with a call that excludes branch-root rows (level 0):
+
+```javascript
+// Load pages — all soccom admins see all pages (collaborative)
+const pagesData = await pagesAPI.getAll(1, 1000);
+// Filter out branch-root rows (level 0) from the admin page list
+const pages = (Array.isArray(pagesData) ? pagesData : pagesData.data || [])
+  .filter(p => p.level !== 0);
+setPages(pages);
+```
+
+### 4b. Add bulletin helpers
+
+Inside the context value object add:
+
+```javascript
+// Bulletins
+getActiveBulletins: () => (posts || []).filter(p =>
+  (p.status === 'live' || p.visible) && p.is_bulletin
+),
+getPinnedBulletins: () => (posts || []).filter(p =>
+  (p.status === 'live' || p.visible) && p.is_pinned
+),
+getEventPosts: () => (posts || []).filter(p =>
+  (p.status === 'live' || p.visible) &&
+  (p.category === 'Event Report' || p.category === 'Parish Notice') &&
+  !p.is_bulletin
+),
+```
+
+---
+
+## 5. Update `src/pages/admin/PagesManager.jsx` — Collaborative view
+
+### 5a. Show all pages to all SocCom admins
+
+Remove any filtering by `author_id`. The current `getAllPages()` now returns all pages (from the updated `loadAllData`). No change needed to the call — just remove this guard if it exists:
+
+```javascript
+// DELETE this block if present:
+// const pages = isSuperAdmin() ? allPages : allPages.filter(p => p.author_id === currentUser.id);
+```
+
+Replace the tab label `'All'` count to exclude branch roots:
+
+```javascript
+const allPages = getAllPages().filter(p => p.level !== 0);
+```
+
+### 5b. Add Branch column to the pages table
+
+In the `<thead>` add a **Branch** column after Title:
+
+```jsx
+<th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Branch</th>
+```
+
+In the `<tbody>` row, add:
+
+```jsx
+<td className="px-4 py-3">
+  {page.branch ? (
+    <span style={{
+      background: BRANCH_COLORS[page.branch] || '#eee',
+      color: '#fff', padding: '2px 8px',
+      borderRadius: 6, fontSize: 11, fontWeight: 600, textTransform: 'capitalize'
+    }}>
+      {page.branch.replace(/-/g, ' ')}
+    </span>
+  ) : '—'}
+</td>
+```
+
+Add this constant at the top of `PagesManager.jsx`:
+
+```javascript
+const BRANCH_COLORS = {
+  'sections':      '#1B3A6B',
+  'choir':         '#6b4e12',
+  'committees':    '#2d6a2d',
+  'support-teams': '#8b2252',
+  'adult-guilds':  '#7a3b00',
+  'youth-guilds':  '#c97a00',
+};
+```
+
+### 5c. Add "Branch" filter dropdown
+
+Below the search input add:
+
+```jsx
+<select
+  value={branchFilter}
+  onChange={e => setBranchFilter(e.target.value)}
+  className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#1B3A6B]"
+>
+  <option value="">All Branches</option>
+  {['sections','choir','committees','support-teams','adult-guilds','youth-guilds'].map(b => (
+    <option key={b} value={b}>{b.replace(/-/g,' ')}</option>
+  ))}
+</select>
+```
+
+Add `const [branchFilter, setBranchFilter] = useState('');` at the top of the component.
+
+Apply the filter inside `getFilteredPages`:
+
+```javascript
+if (branchFilter) {
+  pages = pages.filter(p => p.branch === branchFilter);
+}
+```
+
+---
+
+## 6. Update `src/pages/admin/PageEditor.jsx` — Pre-populate branch when editing
+
+At the top of the edit `useEffect` (where it loads existing page data), add:
+
+```javascript
+if (page.branch)  setSelectedBranch(page.branch);
+if (page.level)   setPageLevel(page.level);
+if (page.parent_id) setSelectedParentId(page.parent_id);
+```
+
+This ensures that when a SocCom admin opens a seeded draft page, the branch/level selectors are already set correctly.
+
+---
+
+## 7. Update `src/pages/admin/PostEditor.jsx` — Bulletin features
+
+### 7a. New state variables
+
+```jsx
+const [isBulletin, setIsBulletin]   = useState(false);
+const [isPinned,   setIsPinned]     = useState(false);
+const [pdfUrl,     setPdfUrl]       = useState('');
+const [eventDate,  setEventDate]    = useState('');
+const [pdfUploading, setPdfUploading] = useState(false);
+```
+
+Populate from existing post when editing:
+
+```javascript
+// inside the !isNew useEffect, after setFormData:
+if (post.is_bulletin) setIsBulletin(true);
+if (post.is_pinned)   setIsPinned(true);
+if (post.pdf_url)     setPdfUrl(post.pdf_url);
+if (post.event_date)  setEventDate(post.event_date?.split('T')[0] || '');
+```
+
+### 7b. PDF upload handler
+
+```javascript
+const handlePdfUpload = async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (!file.type.includes('pdf')) { alert('Only PDF files allowed'); return; }
+  setPdfUploading(true);
+  const fd = new FormData();
+  fd.append('pdf', file);
+  try {
+    const API = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+    const token = localStorage.getItem('adminToken');
+    const res = await fetch(`${API}/api/posts/upload-pdf`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: fd,
+    });
+    const data = await res.json();
+    if (data.url) setPdfUrl(data.url);
+  } catch { alert('PDF upload failed'); }
+  setPdfUploading(false);
+};
+```
+
+### 7c. Include new fields in save payload
+
+Inside `handleSave`, update `finalData`:
+
+```javascript
+const finalData = {
+  ...formData,
+  excerpt: formData.excerpt || formData.content.substring(0, 100) + '...',
+  is_bulletin: isBulletin,
+  is_pinned:   isPinned,
+  pdf_url:     pdfUrl || null,
+  event_date:  eventDate || null,
+};
+```
+
+### 7d. Add Bulletin UI section in the sidebar
+
+Add this block in the sidebar (after the Quick Info card):
+
+```jsx
+{/* Bulletin Settings */}
+<div className="bg-white rounded-lg shadow p-4">
+  <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+    📢 Bulletin / Event Settings
+  </h3>
+
+  {/* Parish Notice category shows bulletin option */}
+  <div className="space-y-3">
+    <label className="flex items-center gap-3 cursor-pointer">
+      <div
+        onClick={() => setIsBulletin(!isBulletin)}
+        className={`w-10 h-5 rounded-full transition-colors ${isBulletin ? 'bg-red-500' : 'bg-gray-300'}`}
+      >
+        <div className={`w-4 h-4 bg-white rounded-full mt-0.5 transition-transform ${isBulletin ? 'translate-x-5' : 'translate-x-0.5'}`} />
+      </div>
+      <div>
+        <span className="font-medium text-sm text-gray-700">Mark as Bulletin</span>
+        <p className="text-xs text-gray-400">Urgent notice — appears in the Notices card</p>
+      </div>
+    </label>
+
+    {isBulletin && (
+      <label className="flex items-center gap-3 cursor-pointer">
+        <div
+          onClick={() => setIsPinned(!isPinned)}
+          className={`w-10 h-5 rounded-full transition-colors ${isPinned ? 'bg-yellow-500' : 'bg-gray-300'}`}
+        >
+          <div className={`w-4 h-4 bg-white rounded-full mt-0.5 transition-transform ${isPinned ? 'translate-x-5' : 'translate-x-0.5'}`} />
+        </div>
+        <div>
+          <span className="font-medium text-sm text-gray-700">📌 Pin to top</span>
+          <p className="text-xs text-gray-400">Pinned bulletins always appear first</p>
+        </div>
+      </label>
+    )}
+
+    {/* Event date */}
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Event Date (optional)</label>
+      <input
+        type="date"
+        value={eventDate}
+        onChange={e => setEventDate(e.target.value)}
+        className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-[#1B3A6B] text-sm"
+      />
+      <p className="text-xs text-gray-400 mt-1">Sets display order in the events list</p>
+    </div>
+
+    {/* PDF Upload */}
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">
+        📄 Bulletin PDF (optional)
+      </label>
+      {pdfUrl ? (
+        <div className="flex items-center gap-2">
+          <a href={`${process.env.REACT_APP_API_URL || 'http://localhost:5000'}${pdfUrl}`}
+             target="_blank" rel="noopener noreferrer"
+             className="text-sm text-[#1B3A6B] underline">
+            View PDF ↗
+          </a>
+          <button onClick={() => setPdfUrl('')}
+            className="text-xs text-red-500 hover:underline">Remove</button>
+        </div>
+      ) : (
+        <label className="block cursor-pointer">
+          <div className="border-2 border-dashed border-gray-300 rounded-lg p-3 text-center hover:border-[#1B3A6B] transition">
+            {pdfUploading ? (
+              <span className="text-sm text-gray-500">Uploading…</span>
+            ) : (
+              <span className="text-sm text-gray-500">Click to upload PDF</span>
+            )}
+          </div>
+          <input type="file" accept=".pdf" onChange={handlePdfUpload} className="hidden" />
+        </label>
+      )}
+    </div>
+  </div>
+</div>
+```
+
+---
+
+## 8. New file — `src/components/NoticesCard.jsx`
+
+This is the public-facing notices/events card for the homepage.
+
+```jsx
+import React, { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
+import { postsAPI } from '../services/api';
+
+const API = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+
+const formatDate = (d) => {
+  if (!d) return null;
+  return new Date(d).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+};
+
+const isPast = (d) => d && new Date(d) < new Date();
+const isSoon = (d) => {
+  if (!d) return false;
+  const diff = new Date(d) - new Date();
+  return diff > 0 && diff < 7 * 24 * 60 * 60 * 1000; // within 7 days
+};
+
+export default function NoticesCard() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const scrollRef = useRef(null);
+
+  useEffect(() => {
+    postsAPI.getBulletins()
+      .then(data => setItems(Array.isArray(data) ? data : []))
+      .catch(() => setItems([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const bulletins = items.filter(p => p.is_bulletin || p.is_pinned);
+  const events    = items.filter(p => !p.is_bulletin && !p.is_pinned);
+
+  return (
+    <div style={{
+      background: 'linear-gradient(135deg,#0f1923 0%,#1B3A6B 60%,#2a6099 100%)',
+      borderRadius: 16,
+      overflow: 'hidden',
+      boxShadow: '0 8px 40px rgba(0,0,0,0.25)',
+      minHeight: 420,
+      display: 'flex',
+      flexDirection: 'column',
+    }}>
+      {/* Header */}
+      <div style={{ padding: '20px 22px 12px', borderBottom: '1px solid rgba(201,168,76,0.25)' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          <span style={{ fontSize:22 }}>📋</span>
+          <div>
+            <h3 style={{ fontFamily:"'Cinzel',serif", color:'#fff', fontSize:17, fontWeight:700, margin:0 }}>
+              Parish Notices & Events
+            </h3>
+            <p style={{ color:'rgba(168,204,232,0.7)', fontSize:11, margin:0 }}>
+              Bulletins · Upcoming Events · Announcements
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {loading ? (
+        <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', color:'rgba(255,255,255,0.4)' }}>
+          Loading notices…
+        </div>
+      ) : items.length === 0 ? (
+        <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', color:'rgba(255,255,255,0.35)', fontSize:13 }}>
+          No notices at this time.
+        </div>
+      ) : (
+        <div ref={scrollRef} style={{ flex:1, overflowY:'auto', padding:'10px 0' }}>
+
+          {/* Pinned Bulletins */}
+          {bulletins.map(item => (
+            <Link
+              key={item.id}
+              to={`/posts/${item.id}`}
+              style={{ display:'block', textDecoration:'none' }}
+            >
+              <div style={{
+                margin:'6px 14px',
+                background:'rgba(201,168,76,0.12)',
+                border:'1px solid rgba(201,168,76,0.4)',
+                borderLeft:'4px solid #C9A84C',
+                borderRadius:10,
+                padding:'10px 14px',
+                transition:'background 0.2s',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background='rgba(201,168,76,0.2)'}
+              onMouseLeave={e => e.currentTarget.style.background='rgba(201,168,76,0.12)'}
+              >
+                <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:4 }}>
+                  {item.is_pinned && <span style={{ fontSize:11, color:'#C9A84C' }}>📌 PINNED</span>}
+                  <span style={{
+                    background:'#C9A84C', color:'#0f1923',
+                    fontSize:9, fontWeight:800, letterSpacing:'0.12em',
+                    padding:'2px 7px', borderRadius:4, textTransform:'uppercase'
+                  }}>BULLETIN</span>
+                </div>
+                <div style={{ color:'#fff', fontSize:13, fontWeight:600, marginBottom:3 }}>{item.title}</div>
+                {item.excerpt && (
+                  <div style={{ color:'rgba(255,255,255,0.6)', fontSize:11, lineHeight:1.5 }}>
+                    {item.excerpt.substring(0, 90)}{item.excerpt.length > 90 ? '…' : ''}
+                  </div>
+                )}
+                <div style={{ display:'flex', alignItems:'center', gap:10, marginTop:6 }}>
+                  {item.pdf_url && (
+                    <a
+                      href={`${API}${item.pdf_url}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={e => e.stopPropagation()}
+                      style={{
+                        background:'rgba(201,168,76,0.2)', border:'1px solid rgba(201,168,76,0.5)',
+                        color:'#C9A84C', padding:'3px 10px', borderRadius:5,
+                        fontSize:10, fontWeight:700, textDecoration:'none',
+                      }}
+                    >
+                      📄 Download PDF
+                    </a>
+                  )}
+                  {item.event_date && (
+                    <span style={{ color:'rgba(201,168,76,0.7)', fontSize:10 }}>
+                      {formatDate(item.event_date)}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </Link>
+          ))}
+
+          {/* Divider */}
+          {bulletins.length > 0 && events.length > 0 && (
+            <div style={{ display:'flex', alignItems:'center', gap:8, margin:'10px 14px' }}>
+              <div style={{ flex:1, height:1, background:'rgba(168,204,232,0.15)' }} />
+              <span style={{ color:'rgba(168,204,232,0.4)', fontSize:10, letterSpacing:'0.1em' }}>UPCOMING</span>
+              <div style={{ flex:1, height:1, background:'rgba(168,204,232,0.15)' }} />
+            </div>
+          )}
+
+          {/* Events / Notices */}
+          {events.map(item => {
+            const past = isPast(item.event_date);
+            const soon = isSoon(item.event_date);
+            return (
+              <Link
+                key={item.id}
+                to={`/posts/${item.id}`}
+                style={{ display:'block', textDecoration:'none' }}
+              >
+                <div style={{
+                  margin:'4px 14px',
+                  background: past ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)',
+                  border:'1px solid rgba(168,204,232,0.1)',
+                  borderLeft: soon ? '3px solid #4ade80' : '3px solid rgba(168,204,232,0.2)',
+                  borderRadius:8,
+                  padding:'9px 12px',
+                  opacity: past ? 0.55 : 1,
+                  transition:'background 0.15s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background='rgba(255,255,255,0.1)'}
+                onMouseLeave={e => e.currentTarget.style.background= past ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.06)'}
+                >
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:8 }}>
+                    <div>
+                      {soon && <span style={{ fontSize:9, color:'#4ade80', fontWeight:700, display:'block', marginBottom:2 }}>● SOON</span>}
+                      <div style={{ color: past ? 'rgba(255,255,255,0.5)' : '#fff', fontSize:13, fontWeight:600 }}>
+                        {item.title}
+                      </div>
+                      <div style={{ color:'rgba(168,204,232,0.55)', fontSize:10, marginTop:2 }}>
+                        {item.category}
+                      </div>
+                    </div>
+                    {item.event_date && (
+                      <div style={{
+                        flexShrink:0, textAlign:'right',
+                        color: past ? 'rgba(255,255,255,0.3)' : 'rgba(168,204,232,0.7)',
+                        fontSize:10, lineHeight:1.3,
+                      }}>
+                        {formatDate(item.event_date)}
+                        {past && <div style={{ fontSize:9, color:'rgba(255,255,255,0.3)' }}>Past</div>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Footer */}
+      <div style={{ padding:'10px 14px', borderTop:'1px solid rgba(168,204,232,0.1)', textAlign:'center' }}>
+        <Link to="/posts" style={{ color:'rgba(168,204,232,0.6)', fontSize:11, textDecoration:'none' }}>
+          View all posts →
+        </Link>
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+## 9. Update `src/components/Home.jsx` — Add Notices card
+
+Import the card:
+
+```jsx
+import NoticesCard from './NoticesCard';
+```
+
+Inside the **Stay Connected** grid (the `grid grid-cols-1 md:grid-cols-3 gap-8` div), **replace** the existing **Get Involved** card (the middle card) OR add the NoticesCard as a **fourth card below** the three-column section. Recommended: add a dedicated row below the grid:
+
+```jsx
+{/* ── Notices & Events ── */}
+<div style={{ maxWidth: 1152, margin: '0 auto', padding: '24px 16px 0' }}>
+  <h2 className="hn-section-heading">Notices & Events</h2>
+  <p className="hn-section-sub">Stay up to date with parish life</p>
+  <div className="hn-section-rule">
+    <div className="hn-rule-line" />
+    <span className="hn-rule-cross">✝</span>
+    <div className="hn-rule-line rev" />
+  </div>
+  <div style={{ maxWidth: 560, margin: '0 auto' }}>
+    <NoticesCard />
+  </div>
+</div>
+```
+
+---
+
+## 10. Update `src/pages/admin/PostsManager.jsx` — Bulletin button
+
+### 10a. Add Bulletin tab
+
+Add to the tab row:
+
+```jsx
+<button
+  onClick={() => setActiveTab('bulletins')}
+  className={`px-4 py-2 rounded-lg flex items-center gap-1 ${
+    activeTab === 'bulletins' ? 'bg-yellow-500 text-white' : 'bg-gray-100 hover:bg-gray-200'
+  }`}
+>
+  📌 Bulletins ({allPosts.filter(p => p.is_bulletin).length})
+</button>
+```
+
+Add to `getFilteredPosts`:
+
+```javascript
+if (activeTab === 'bulletins') {
+  return (allPosts || []).filter(p => p.is_bulletin || p.is_pinned);
+}
+```
+
+### 10b. Add "New Bulletin" quick button
+
+Next to `+ New Post` button:
+
+```jsx
+<Link
+  to="/admin/posts/new?type=bulletin"
+  className="bg-yellow-500 text-white px-4 py-2 rounded-lg hover:bg-yellow-600 flex items-center gap-1"
+>
+  📌 New Bulletin
+</Link>
+```
+
+In `PostEditor`, detect the query param on mount:
+
+```javascript
+useEffect(() => {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('type') === 'bulletin') {
+    setIsBulletin(true);
+    setIsPinned(true);
+    setFormData(prev => ({ ...prev, category: 'Parish Notice' }));
+  }
+}, []);
+```
+
+### 10c. Bulletin badge in table rows
+
+In the table `<td>` for Title, add after the title text:
+
+```jsx
+{post.is_bulletin && (
+  <span style={{
+    marginLeft: 6, background:'#f59e0b', color:'#fff',
+    fontSize: 9, padding:'1px 5px', borderRadius:4, fontWeight:700
+  }}>
+    BULLETIN
+  </span>
+)}
+{post.is_pinned && <span style={{ marginLeft:4, fontSize:12 }}>📌</span>}
+{post.pdf_url   && <span style={{ marginLeft:4, fontSize:12 }}>📄</span>}
+```
+
+---
+
+## 11. Update `src/pages/CommunitiesPage.jsx` — Seasonal Oak Tree
+
+### 11a. Seasonal colour engine
+
+Add this utility at the top of `CommunitiesPage.jsx` (after imports):
+
+```javascript
+import { getMonth } from 'date-fns';
+
+// Southern Hemisphere seasonal colours (Harare)
+function getSeasonalPalette() {
+  const month = getMonth(new Date()); // 0 = Jan
+  // Spring  Sep–Nov (8, 9, 10)
+  // Summer  Dec–Feb (11, 0, 1)
+  // Autumn  Mar–May (2, 3, 4)
+  // Winter  Jun–Aug (5, 6, 7)
+
+  if ([8, 9, 10].includes(month)) {
+    // Spring — fresh light greens, buds
+    return {
+      season: 'spring',
+      leaves: ['#4caf50','#66bb6a','#81c784','#a5d6a7','#c8e6c9'],
+      canopy: '#388e3c',
+      canopy2: '#2e7d32',
+      snow: false,
+      leafOpacity: 0.9,
+    };
+  }
+  if ([11, 0, 1].includes(month)) {
+    // Summer — deep lush green
+    return {
+      season: 'summer',
+      leaves: ['#1b5e20','#2e7d32','#388e3c','#43a047','#4caf50'],
+      canopy: '#1b5e20',
+      canopy2: '#2e7d32',
+      snow: false,
+      leafOpacity: 1,
+    };
+  }
+  if ([2, 3, 4].includes(month)) {
+    // Autumn — orange, red, gold
+    return {
+      season: 'autumn',
+      leaves: ['#e65100','#f57c00','#ff8f00','#ffa000','#ffb300','#bf360c','#d84315'],
+      canopy: '#e65100',
+      canopy2: '#bf360c',
+      snow: false,
+      leafOpacity: 0.85,
+    };
+  }
+  // Winter Jun–Aug — bare/frost
+  return {
+    season: 'winter',
+    leaves: ['#b0bec5','#cfd8dc','#eceff1','#f5f5f5'],
+    canopy: '#78909c',
+    canopy2: '#607d8b',
+    snow: true,
+    leafOpacity: 0.6,
+  };
+}
+```
+
+### 11b. Use palette in the tree SVG
+
+Inside `CommunitiesPage`, call at render time:
+
+```javascript
+const palette = getSeasonalPalette();
+```
+
+Replace **every hardcoded green** in the SVG canopy with `palette.canopy` / `palette.canopy2`:
+
+```jsx
+<ellipse cx="100" cy="55" rx="60" ry="50" fill={palette.canopy} opacity={palette.leafOpacity}/>
+<ellipse cx="68" cy="70" rx="38" ry="32" fill={palette.canopy2}/>
+<ellipse cx="132" cy="68" rx="36" ry="30" fill={palette.canopy}/>
+<ellipse cx="100" cy="30" rx="42" ry="35" fill={palette.canopy2}/>
+```
+
+### 11c. Snow overlay on the SVG
+
+Add this **inside** the SVG, after the canopy ellipses, when `palette.snow`:
+
+```jsx
+{palette.snow && (
+  <>
+    {/* Snow on canopy */}
+    <ellipse cx="100" cy="40" rx="52" ry="18" fill="rgba(240,248,255,0.55)"/>
+    <ellipse cx="72"  cy="62" rx="30" ry="12" fill="rgba(240,248,255,0.45)"/>
+    <ellipse cx="130" cy="60" rx="28" ry="11" fill="rgba(240,248,255,0.45)"/>
+    {/* Snow at base */}
+    <ellipse cx="100" cy="588" rx="70" ry="14" fill="rgba(220,235,245,0.6)"/>
+    {/* Snowflakes */}
+    {[[30,300],[160,260],[60,350],[150,340],[100,220],[80,400],[130,410]].map(([x,y],i) => (
+      <text key={i} x={x} y={y} fontSize="8" fill="rgba(200,230,255,0.7)" textAnchor="middle">❄</text>
+    ))}
+  </>
+)}
+```
+
+### 11d. Dynamic leaf dots for each live page
+
+Below the static SVG, pages from the selected or all branches render as small coloured leaf blobs on the tree. Add this inside the SVG **on the branch stubs** — one small circle per live page:
+
+```jsx
+{/* Live page leaves — positioned along branch areas */}
+{allLiveLeaves.map((leaf, i) => {
+  const color = palette.leaves[i % palette.leaves.length];
+  // Alternate left/right branch areas
+  const side  = i % 2 === 0 ? -1 : 1;
+  const yBase = 180 + (i * 38) % 320;
+  const x     = 100 + side * (35 + (i * 17) % 30);
+  return (
+    <ellipse
+      key={leaf.id}
+      cx={x} cy={yBase}
+      rx="9" ry="7"
+      fill={color}
+      opacity={palette.leafOpacity * 0.9}
+      style={{ cursor:'pointer', transition:'opacity 0.3s' }}
+      onClick={() => navigate(`/communities/${leaf.branch}/${leaf.slug}`)}
+    >
+      <title>{leaf.title}</title>
+    </ellipse>
+  );
+})}
+```
+
+Add the data fetch for all live pages in `CommunitiesPage`:
+
+```javascript
+const [allLiveLeaves, setAllLiveLeaves] = useState([]);
+
+useEffect(() => {
+  // Fetch all live sub-branch pages across all branches for leaf rendering
+  Promise.all(
+    ['sections','choir','committees','support-teams','adult-guilds','youth-guilds'].map(b =>
+      fetch(`${API}/api/communities/${b}`).then(r => r.json()).catch(() => [])
+    )
+  ).then(results => {
+    const flat = results.flat().filter(p => p && p.id);
+    setAllLiveLeaves(flat);
+  });
+}, [API]);
+```
+
+### 11e. Season label on tree
+
+Inside the SVG, add a small text label at the bottom:
+
+```jsx
+<text x="100" y="610" textAnchor="middle" fontSize="8"
+  fill="rgba(255,255,255,0.3)" fontFamily="serif" fontStyle="italic">
+  {palette.season.charAt(0).toUpperCase() + palette.season.slice(1)}
+</text>
+```
+
+---
+
+## 12. Update `src/pages/BranchPage.jsx` — Leaf count on sub-branch
+
+Leaf pages (level 2) should also show as a count badge on each sub-branch card. This is already implemented via `leaf_count` from the backend query in Phase 1 Section 3b. Ensure the API returns `leaf_count` and the card renders:
+
+```jsx
+{page.leaf_count > 0 && (
+  <span style={{ fontSize:11, color:'#888' }}>
+    🍃 {page.leaf_count} sub-page{page.leaf_count > 1 ? 's' : ''}
+  </span>
+)}
+```
+
+---
+
+## 13. Replace stub `toast.js` with Sonner
+
+### 13a. Update `src/constants/toast.js`
+
+```javascript
+import { toast as sonnerToast } from 'sonner';
+
+export const toast = {
+  error:   (msg = 'Something went wrong.')    => sonnerToast.error(msg),
+  success: (msg = 'Done!')                    => sonnerToast.success(msg),
+  warning: (msg)                              => sonnerToast.warning(msg),
+  info:    (msg)                              => sonnerToast.info(msg),
+};
+
+export default toast;
+```
+
+### 13b. Add the `<Toaster />` to `App.jsx`
+
+```jsx
+import { Toaster } from 'sonner';
+
+// Inside the <ThemeProvider> wrapper, anywhere near the top:
+<Toaster richColors position="top-right" />
+```
+
+---
+
+## 14. Cleanup tasks
+
+### 14a. Delete now-unused utility files
+
+```
+src/utils/pathMapper.js         (still referenced in PagesManager — replace calls)
+src/config/pageTemplates.js     (only used in old PageEditor template picker — remove if replacing)
+```
+
+Before deleting `pathMapper.js`, **replace** any remaining import in `PagesManager.jsx`:
+
+- `getCorrectPagePath(page.path)` → just `page.path || '—'`
+- `getCorrectPath(page.path)` → `` `/HolyName${page.path}` `` or direct link
+
+In `SubmissionsReview.jsx`, same replacement.
+
+### 14b. CMSConstants — add bulletin category
+
+In `src/constants/CMSConstants.js`, add to `POST_CATEGORIES`:
+
+```javascript
+export const POST_CATEGORIES = {
+  PARISH_NOTICE:  'Parish Notice',
+  EVENT_REPORT:   'Event Report',
+  YOUTH_COMMITTEE:'Youth Committee',
+  ADULT_COMMITTEE:'Adult Committee',
+  BULLETIN:       'Bulletin',      // ← new
+};
+```
+
+---
+
+## 15. Summary of all new/changed files
+
+| File | Action |
+|------|--------|
+| `backend/seedCommunityPages.js` | **CREATE** — one-time seed script |
+| `backend/server.js` | **EDIT** — collaborative pages, bulletin fields, PDF upload, bulletins endpoint |
+| `backend/db.js` | **EDIT** — bulletin column migration |
+| `src/services/api.js` | **EDIT** — `getBulletins`, `uploadPdf` |
+| `src/context/AuthContext.jsx` | **EDIT** — shared pages load, bulletin helpers |
+| `src/constants/CMSConstants.js` | **EDIT** — add Bulletin category |
+| `src/constants/toast.js` | **REPLACE** — Sonner integration |
+| `src/pages/admin/PagesManager.jsx` | **EDIT** — branch column, branch filter, all-admins view |
+| `src/pages/admin/PageEditor.jsx` | **EDIT** — pre-populate branch when editing seeded pages |
+| `src/pages/admin/PostEditor.jsx` | **EDIT** — bulletin toggle, pin toggle, PDF upload, event date |
+| `src/pages/admin/PostsManager.jsx` | **EDIT** — bulletin tab, New Bulletin button, badges |
+| `src/pages/CommunitiesPage.jsx` | **EDIT** — seasonal palette, snow, live leaf dots |
+| `src/pages/BranchPage.jsx` | **EDIT** — leaf_count badge |
+| `src/components/NoticesCard.jsx` | **CREATE** — public-facing scrollable notices card |
+| `src/components/Home.jsx` | **EDIT** — add NoticesCard section |
+| `src/App.jsx` | **EDIT** — add `<Toaster />` |
+
+---
+
+## 16. Implementation order
+
+1. Run `npm install sonner date-fns` (react-pdf optional, add later)
+2. Apply DB migration in `db.js` (section 2c) and restart backend
+3. Run `node backend/seedCommunityPages.js`
+4. Confirm 28 community draft pages now appear in the admin Pages list
+5. Apply backend route changes (sections 2a–2f)
+6. Update `api.js` (section 3) and `AuthContext.jsx` (section 4)
+7. Update `PagesManager.jsx` (section 5)
+8. Update `PageEditor.jsx` (section 6)
+9. Update `PostEditor.jsx` (section 7) and `PostsManager.jsx` (section 10)
+10. Create `NoticesCard.jsx` (section 8) and wire into `Home.jsx` (section 9)
+11. Update `CommunitiesPage.jsx` seasonal tree (section 11)
+12. Replace `toast.js` and add `<Toaster />` (section 13)
+13. Clean up pathMapper references (section 14)
+
+---
+
+## 17. Test checklist
+
+- [ ] 28 community pages appear in admin Pages list as **Draft**, visible to ALL SocCom admins
+- [ ] SocCom admin A can open and edit a page created by SocCom admin B
+- [ ] Branch column and filter work in PagesManager
+- [ ] Creating a Bulletin post shows toggle + PDF upload UI
+- [ ] PDF upload saves and shows "Download PDF" link on NoticesCard
+- [ ] Pinned bulletins appear at the very top of NoticesCard
+- [ ] Past events appear faded in NoticesCard; upcoming "SOON" events show green badge
+- [ ] NoticesCard is scrollable, all items clickable → go to `/posts/:id`
+- [ ] Oak tree leaf blobs appear for each live community page
+- [ ] Leaf colours match the current Southern Hemisphere season
+- [ ] In June/July/August, tree shows frost effect and snow overlay
+- [ ] Adding a new approved page → new leaf appears on tree on next load
+- [ ] Seasonal label text shows at the bottom of the tree SVG
+- [ ] Toast notifications (success/error) render in the top-right corner via Sonner

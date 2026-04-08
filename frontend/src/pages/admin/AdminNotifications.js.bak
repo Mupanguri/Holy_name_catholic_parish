@@ -1,0 +1,280 @@
+import React from 'react';
+import { useAuth } from '../../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
+
+const AdminNotifications = () => {
+  const navigate = useNavigate();
+  const {
+    getAllNotifications,
+    getUnreadNotifications,
+    markNotificationRead,
+    markAllNotificationsRead,
+    deleteNotification,
+  } = useAuth();
+
+  const unreadNotifications = getUnreadNotifications();
+  const allNotifications = getAllNotifications();
+
+  const handleNotificationClick = async notification => {
+    await markNotificationRead(notification.id);
+    if (notification.related_type === 'submission') {
+      navigate('/admin/submissions');
+    } else if (notification.related_type === 'document') {
+      navigate('/admin/submissions');
+    }
+  };
+
+  const getNotificationIcon = type => {
+    const styles = {
+      success: { bg: 'rgba(22,163,74,0.12)', border: 'rgba(22,163,74,0.2)', color: '#4ade80' },
+      error: { bg: 'rgba(220,38,38,0.1)', border: 'rgba(220,38,38,0.2)', color: '#f87171' },
+      warning: { bg: 'rgba(201,168,76,0.1)', border: 'rgba(201,168,76,0.2)', color: '#fbbf24' },
+      submission: { bg: 'rgba(42,96,153,0.12)', border: 'rgba(42,96,153,0.2)', color: '#93c5fd' },
+      default: { bg: 'rgba(168,204,232,0.07)', border: 'rgba(168,204,232,0.12)', color: 'rgba(168,204,232,0.6)' },
+    };
+    const s = styles[type] || styles.default;
+
+    const paths = {
+      success: 'M5 13l4 4L19 7',
+      error: 'M6 18L18 6M6 6l12 12',
+      warning: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z',
+      submission: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
+      default: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
+    };
+    const d = paths[type] || paths.default;
+
+    return (
+      <div style={{
+        width: 38, height: 38, borderRadius: 10, flexShrink: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: s.bg, border: `1px solid ${s.border}`,
+      }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={s.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d={d} />
+        </svg>
+      </div>
+    );
+  };
+
+  const formatTimeAgo = dateString => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now - date) / 1000);
+    if (diffInSeconds < 60) return 'Just now';
+    if (diffInSeconds < 3600) {
+      const minutes = Math.floor(diffInSeconds / 60);
+      return `${minutes}m ago`;
+    }
+    if (diffInSeconds < 86400) {
+      const hours = Math.floor(diffInSeconds / 3600);
+      return `${hours}h ago`;
+    }
+    const days = Math.floor(diffInSeconds / 86400);
+    return `${days}d ago`;
+  };
+
+  return (
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@300;400;500;600&display=swap');
+        *, *::before, *::after { box-sizing: border-box; }
+
+        .an-root {
+          padding: 28px;
+          font-family: 'Inter', sans-serif;
+          color: #e8edf4;
+          min-height: 100vh;
+          background: #0f1624;
+        }
+
+        .an-header { margin-bottom: 24px; }
+        .an-title {
+          font-family: 'Cinzel', serif;
+          font-size: 20px; font-weight: 600;
+          color: #e8edf4; letter-spacing: 0.02em;
+          margin-bottom: 5px;
+        }
+        .an-sub { font-size: 13px; color: rgba(168,204,232,0.35); }
+
+        .an-toolbar {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 16px;
+          padding: 12px 18px;
+          background: rgba(255,255,255,0.025);
+          border: 1px solid rgba(168,204,232,0.07);
+          border-radius: 10px;
+        }
+        .an-count {
+          font-size: 12.5px;
+          color: rgba(168,204,232,0.4);
+        }
+        .an-mark-all {
+          font-size: 12.5px; font-weight: 500;
+          color: rgba(42,96,153,0.85);
+          background: none; border: none; cursor: pointer;
+          padding: 6px 14px;
+          border-radius: 7px;
+          border: 1px solid rgba(42,96,153,0.25);
+          background: rgba(42,96,153,0.07);
+          transition: all 0.16s;
+          font-family: 'Inter', sans-serif;
+        }
+        .an-mark-all:hover { background: rgba(42,96,153,0.15); color: #a8cce8; }
+
+        .an-list {
+          background: rgba(255,255,255,0.025);
+          border: 1px solid rgba(168,204,232,0.07);
+          border-radius: 12px;
+          overflow: hidden;
+        }
+
+        .an-empty {
+          padding: 60px 24px;
+          text-align: center;
+          color: rgba(168,204,232,0.25);
+        }
+        .an-empty-icon {
+          width: 60px; height: 60px;
+          margin: 0 auto 16px;
+          border-radius: 16px;
+          background: rgba(168,204,232,0.04);
+          border: 1px solid rgba(168,204,232,0.08);
+          display: flex; align-items: center; justify-content: center;
+        }
+        .an-empty-title { font-size: 15px; font-weight: 500; color: rgba(168,204,232,0.3); margin-bottom: 6px; }
+        .an-empty-sub { font-size: 13px; color: rgba(168,204,232,0.18); }
+
+        .an-item {
+          display: flex; gap: 14px;
+          padding: 16px 18px;
+          border-bottom: 1px solid rgba(168,204,232,0.05);
+          cursor: pointer;
+          transition: background 0.14s;
+          align-items: flex-start;
+        }
+        .an-item:last-child { border-bottom: none; }
+        .an-item:hover { background: rgba(168,204,232,0.04); }
+        .an-item.unread { background: rgba(42,96,153,0.06); }
+        .an-item.unread:hover { background: rgba(42,96,153,0.1); }
+
+        .an-content { flex: 1; min-width: 0; }
+        .an-item-top {
+          display: flex; justify-content: space-between;
+          align-items: flex-start; gap: 12px; margin-bottom: 5px;
+        }
+        .an-item-title {
+          font-size: 13.5px; font-weight: 500;
+          color: #e8edf4;
+          line-height: 1.4;
+        }
+        .an-item-title.read { color: rgba(168,204,232,0.55); font-weight: 400; }
+        .an-item-time {
+          font-size: 11px;
+          color: rgba(168,204,232,0.25);
+          white-space: nowrap; flex-shrink: 0;
+        }
+        .an-item-msg {
+          font-size: 12.5px;
+          color: rgba(168,204,232,0.35);
+          line-height: 1.5;
+        }
+        .an-item-unread-dot {
+          display: flex; align-items: center; gap: 6px;
+          margin-top: 8px;
+        }
+        .an-dot {
+          width: 6px; height: 6px;
+          border-radius: 50%;
+          background: #3b82f6;
+          flex-shrink: 0;
+        }
+        .an-dot-label { font-size: 11px; color: rgba(168,204,232,0.3); }
+
+        .an-delete {
+          background: none; border: none; cursor: pointer;
+          color: rgba(168,204,232,0.2);
+          padding: 4px;
+          border-radius: 6px;
+          display: flex; align-items: center; justify-content: center;
+          transition: background 0.14s, color 0.14s;
+          flex-shrink: 0;
+        }
+        .an-delete:hover { background: rgba(220,38,38,0.1); color: #f87171; }
+      `}</style>
+
+      <div className="an-root">
+        <div className="an-header">
+          <div className="an-title">Notifications</div>
+          <div className="an-sub">View all your notifications and alerts</div>
+        </div>
+
+        {allNotifications.length > 0 && (
+          <div className="an-toolbar">
+            <span className="an-count">
+              {allNotifications.length} total
+              {unreadNotifications.length > 0 && ` · ${unreadNotifications.length} unread`}
+            </span>
+            {unreadNotifications.length > 0 && (
+              <button onClick={markAllNotificationsRead} className="an-mark-all">
+                Mark all as read
+              </button>
+            )}
+          </div>
+        )}
+
+        <div className="an-list">
+          {allNotifications.length === 0 ? (
+            <div className="an-empty">
+              <div className="an-empty-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(168,204,232,0.3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                </svg>
+              </div>
+              <div className="an-empty-title">No notifications yet</div>
+              <div className="an-empty-sub">You're all caught up!</div>
+            </div>
+          ) : (
+            allNotifications.map(notification => (
+              <div
+                key={notification.id}
+                onClick={() => handleNotificationClick(notification)}
+                className={`an-item${!notification.is_read ? ' unread' : ''}`}
+              >
+                {getNotificationIcon(notification.type)}
+                <div className="an-content">
+                  <div className="an-item-top">
+                    <p className={`an-item-title${notification.is_read ? ' read' : ''}`}>
+                      {notification.title}
+                    </p>
+                    <span className="an-item-time">{formatTimeAgo(notification.created_at)}</span>
+                  </div>
+                  <p className="an-item-msg">{notification.message}</p>
+                  {!notification.is_read && (
+                    <div className="an-item-unread-dot">
+                      <div className="an-dot" />
+                      <span className="an-dot-label">Unread</span>
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={e => { e.stopPropagation(); deleteNotification(notification.id); }}
+                  className="an-delete"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </>
+  );
+};
+
+export default AdminNotifications;
