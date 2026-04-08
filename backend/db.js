@@ -350,9 +350,6 @@ const seedDatabase = async () => {
     console.log('Seed error (may be expected):', error.message);
   }
 };
-    console.log('IMPORTANT: Change these passwords immediately in production!');
-  }
-};
 
 module.exports = {
   pool,
