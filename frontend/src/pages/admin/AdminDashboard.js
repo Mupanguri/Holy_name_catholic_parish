@@ -15,6 +15,18 @@ const AdminDashboard = () => {
   } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!currentUser) {
+      navigate('/admin/login');
+    }
+  }, [currentUser, navigate]);
+
+  if (!currentUser) {
+    return null;
+  }
+
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [theme, setTheme] = useState('dim'); // 'light', 'dim', 'dark'
 
