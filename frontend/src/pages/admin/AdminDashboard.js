@@ -17,6 +17,10 @@ const AdminDashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Hooks must be called before any early returns
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [theme, setTheme] = useState('dim'); // 'light', 'dim', 'dark'
+
   // Redirect to login if not authenticated (and not loading)
   useEffect(() => {
     if (!loading && !currentUser) {
@@ -25,11 +29,8 @@ const AdminDashboard = () => {
   }, [currentUser, loading, navigate]);
 
   if (loading || !currentUser) {
-    return <div style={{ padding: 20 }}>Loading...</div>;
+    return <div style={{ padding: 20, color: 'white' }}>Loading...</div>;
   }
-
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [theme, setTheme] = useState('dim'); // 'light', 'dim', 'dark'
 
   const handleLogout = () => {
     logout();
@@ -87,13 +88,6 @@ const AdminDashboard = () => {
   };
 
   const colors = themeConfig[theme];
-
-  useEffect(() => {
-    const token = localStorage.getItem('adminToken');
-    if (!currentUser && !token) {
-      navigate('/admin/login');
-    }
-  }, [currentUser, navigate]);
 
   if (!currentUser) {
     return null;
