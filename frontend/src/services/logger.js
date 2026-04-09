@@ -538,8 +538,9 @@ const setupPerformanceTracking = () => {
 
 let screenAnalysisInterval = null;
 const startPeriodicScreenAnalysis = () => {
-  setTimeout(runScreenAnalysis, 1000);
-  screenAnalysisInterval = setInterval(runScreenAnalysis, 3000);
+  // Only run screen analysis once on page load, not continuously
+  // This keeps logs clean and efficient
+  setTimeout(runScreenAnalysis, 2000);
 };
 
 // ─── Public Logger API ────────────────────────────────────────────────────────
