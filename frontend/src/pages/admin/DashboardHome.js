@@ -20,6 +20,11 @@ const DashboardHome = () => {
     users,
   } = useAuth();
 
+  // Debug - log any issues
+  if (!currentUser) {
+    return <div style={{color: 'white', padding: 20}}>Not logged in</div>;
+  }
+
   const livePages = getLivePages();
   const draftPages = getDraftPages();
   const livePosts = getLivePosts();
