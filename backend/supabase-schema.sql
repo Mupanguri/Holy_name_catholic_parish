@@ -186,3 +186,8 @@ CREATE INDEX IF NOT EXISTS idx_document_revisions_status ON document_revisions(s
 CREATE INDEX IF NOT EXISTS idx_document_revisions_author ON document_revisions(author_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read);
+
+-- Seed default admin user
+INSERT INTO users (username, password, name, email, role) VALUES
+('admin', '$2b$12$dJPxHEfetH18ruVUTb77IeuFr3KTXBNi7aTPXmRGi06TUyRvANc4C', 'Admin', 'admin@holyname.org', 'super_admin')
+ON CONFLICT (username) DO NOTHING;

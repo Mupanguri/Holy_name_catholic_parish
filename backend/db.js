@@ -327,20 +327,17 @@ const seedDatabase = async () => {
     if (parseInt(userCheck.rows[0].count) === 0) {
       // Use environment variables for seeds or generate random passwords
       const adminPass = process.env.SEED_ADMIN_PASSWORD || 'admin123';
-      const soccomPass = process.env.SEED_SOCCOM_PASSWORD || 'soccom123';
 
       // Hash passwords before seeding
       const hashedAdminPassword = await bcrypt.hash(adminPass, 12);
-      const hashedSoccomPassword = await bcrypt.hash(soccomPass, 12);
 
       // Seed default users
       const seedUsers = `
             INSERT INTO users (username, password, name, email, role) VALUES
-            ('superadmin', $1, 'Father John', 'superadmin@holyname.org', 'super_admin'),
-            ('soccom', $2, 'SocCom Admin', 'soccom@holyname.org', 'soccom_admin')
+            ('admin', $1, 'Admin', 'admin@holyname.org', 'super_admin')
             ON CONFLICT (username) DO NOTHING;
         `;
-      await pool.query(seedUsers, [hashedAdminPassword, hashedSoccomPassword]);
+      await pool.query(seedUsers, [hashedAdminPassword]);
       console.log('Default users seeded!');
       console.log('Login with: superadmin / admin123');
     } else {
