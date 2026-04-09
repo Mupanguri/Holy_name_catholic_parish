@@ -48,9 +48,10 @@ const AdminLogin = () => {
     const result = await login(username, password);
     setLoading(false);
     if (result.success) {
-      triggerCrucifix();
+      // Direct navigation - no animation
+      navigate('/admin/dashboard');
     } else {
-      setError(result.error);
+      setError(result.error || 'Login failed');
     }
   };
 

@@ -190,15 +190,22 @@ export const AuthProvider = ({ children }) => {
   const login = async (username, password) => {
     try {
       const result = await authAPI.login(username, password);
+      console.log('Login result:', result);
       if (result.success) {
         setCurrentUser(result.user);
         localStorage.setItem('adminToken', result.token);
         localStorage.setItem('adminUser', JSON.stringify(result.user));
-        await loadAllData();
+        // Try loading data but don't block login on failure
+        try {
+          await loadAllData();
+        } catch (e) {
+          console.log('Data load error (non-critical):', e.message);
+        }
         return { success: true, user: result.user };
       }
-      return { success: false, error: 'Invalid credentials' };
+      return { success: false, error: result.error || 'Invalid credentials' };
     } catch (error) {
+      console.log('Login error:', error);
       return { success: false, error: error.message };
     }
   };

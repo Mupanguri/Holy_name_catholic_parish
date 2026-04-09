@@ -12,19 +12,20 @@ const AdminDashboard = () => {
     getMyTasks,
     getPendingVideoLinks,
     getAllDocuments,
+    loading,
   } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Redirect to login if not authenticated
+  // Redirect to login if not authenticated (and not loading)
   useEffect(() => {
-    if (!currentUser) {
+    if (!loading && !currentUser) {
       navigate('/admin/login');
     }
-  }, [currentUser, navigate]);
+  }, [currentUser, loading, navigate]);
 
-  if (!currentUser) {
-    return null;
+  if (loading || !currentUser) {
+    return <div style={{ padding: 20 }}>Loading...</div>;
   }
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
