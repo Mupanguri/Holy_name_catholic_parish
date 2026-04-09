@@ -256,15 +256,12 @@ const allowedOrigins = [
   'http://localhost:3000',
   'https://holy-name-catholic-parish-htwr.vercel.app',
   'https://holy-name-catholic-parish.onrender.com'
-].filter(Boolean);
+];
 
 const corsOptions = {
   origin: function(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
+    // Allow all origins for now - can tighten later
+    callback(null, true);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -1928,17 +1925,8 @@ app.get('/api/logs', authenticate, requireSuperAdmin, async (req, res) => {
 app.post('/api/logs/frontend', async (req, res) => {
   const { level, type, message, data, timestamp, userId, username, url, userAgent } = req.body;
   logger.info(`[FRONTEND] ${message}`, { type, data, userId, username, url });
-  try {
-    await db.pool.query('INSERT INTO logs (action, user_name, details) VALUES ($1, $2, $3)', [
-      type,
-      username,
-      JSON.stringify({ level, message, data, url, userAgent, frontendTimestamp: timestamp }),
-    ]);
-    res.json({ success: true });
-  } catch (error) {
-    logger.warn('Failed to store frontend log in database:', error.message);
-    res.json({ success: true, stored: false });
-  }
+  // Don't try to write to DB on every log - just return success
+  res.json({ success: true });
 });
 
 app.get('/api/logs/screen-analysis', async (req, res) => {
