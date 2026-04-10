@@ -1,8 +1,9 @@
 // Centralized API configuration
 // All API calls should import from this file
 // For local dev, create .env.local with REACT_APP_API_URL=http://localhost:5000
+// For production (Vercel), set REACT_APP_API_URL to your Render backend URL in Vercel dashboard
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://holy-name-catholic-parish.onrender.com';
 
 // Helper to get auth headers
 const getAuthHeaders = () => {
