@@ -18,23 +18,30 @@ const DashboardHome = () => {
     getUnreadNotifications,
     getAllVideoLinks,
     users,
+    loading,
   } = useAuth();
 
   // Debug - log any issues
+  if (loading) {
+    return <div style={{color: 'white', padding: 20}}>Loading data...</div>;
+  }
+  
   if (!currentUser) {
-    return <div style={{color: 'white', padding: 20}}>Not logged in</div>;
+    return <div style={{color: 'white', padding: 20}}>Not logged in - currentUser is null</div>;
   }
 
-  const livePages = getLivePages();
-  const draftPages = getDraftPages();
-  const livePosts = getLivePosts();
-  const draftPosts = getDraftPosts();
-  const media = getAllMedia();
-  const pendingSubmissions = getPendingSubmissions();
-  const myTasks = getMyTasks();
-  const pendingDocuments = getPendingDocuments();
-  const unreadNotifications = getUnreadNotifications();
-  const videoLinks = getAllVideoLinks();
+  // Wrap everything in try-catch to prevent white screen
+  try {
+  const livePages = getLivePages ? getLivePages() : [];
+  const draftPages = getDraftPages ? getDraftPages() : [];
+  const livePosts = getLivePosts ? getLivePosts() : [];
+  const draftPosts = getDraftPosts ? getDraftPosts() : [];
+  const media = getAllMedia ? getAllMedia() : [];
+  const pendingSubmissions = getPendingSubmissions ? getPendingSubmissions() : [];
+  const myTasks = getMyTasks ? getMyTasks() : [];
+  const pendingDocuments = getPendingDocuments ? getPendingDocuments() : [];
+  const unreadNotifications = getUnreadNotifications ? getUnreadNotifications() : [];
+  const videoLinks = getAllVideoLinks ? getAllVideoLinks() : [];
 
   const totalMediaWithVideos = media.length + videoLinks.length;
 
@@ -547,6 +554,9 @@ const DashboardHome = () => {
       </div>
     </>
   );
+  } catch (err) {
+    return <div style={{color: 'white', padding: 20, background: 'red'}}>Dashboard Error: {err.message}</div>;
+  }
 };
 
 export default DashboardHome;
