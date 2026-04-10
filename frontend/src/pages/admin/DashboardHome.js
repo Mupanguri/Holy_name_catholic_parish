@@ -31,6 +31,8 @@ const DashboardHome = () => {
   }
 
   // Wrap everything in try-catch to prevent white screen
+  console.log('DashboardHome rendering, currentUser:', currentUser);
+  
   try {
   const livePages = getLivePages ? getLivePages() : [];
   const draftPages = getDraftPages ? getDraftPages() : [];
@@ -42,6 +44,8 @@ const DashboardHome = () => {
   const pendingDocuments = getPendingDocuments ? getPendingDocuments() : [];
   const unreadNotifications = getUnreadNotifications ? getUnreadNotifications() : [];
   const videoLinks = getAllVideoLinks ? getAllVideoLinks() : [];
+
+  console.log('Data loaded, media:', media.length);
 
   const totalMediaWithVideos = media.length + videoLinks.length;
 
