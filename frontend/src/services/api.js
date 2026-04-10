@@ -1,7 +1,8 @@
 // Centralized API configuration
 // All API calls should import from this file
+// For local dev, create .env.local with REACT_APP_API_URL=http://localhost:5000
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://holy-name-catholic-parish.onrender.com';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
 // Helper to get auth headers
 const getAuthHeaders = () => {
