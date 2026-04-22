@@ -49,6 +49,35 @@ const initDatabase = async () => {
 
     if (result.rows.length >= 7) {
       console.log('All tables verified successfully!');
+      // Always apply schema migrations for existing databases
+      try {
+        await pool.query(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS page_type VARCHAR(20) DEFAULT 'leaf'`);
+      } catch (e) { /* ignore */ }
+      try {
+        await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS rejection_reason TEXT`);
+        await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS rejected_by VARCHAR(255)`);
+        await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMP`);
+      } catch (e) { /* ignore */ }
+      // Media attachment columns
+      try {
+        await pool.query(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS preview_image VARCHAR(500)`);
+        await pool.query(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS attached_documents JSONB DEFAULT '[]'`);
+        await pool.query(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS attached_videos JSONB DEFAULT '[]'`);
+        await pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS preview_image VARCHAR(500)`);
+        await pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS attached_documents JSONB DEFAULT '[]'`);
+        await pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS attached_videos JSONB DEFAULT '[]'`);
+        await pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS image_layouts JSONB DEFAULT '{}'`);
+      } catch (e) { /* ignore */ }
+      // Mass upload columns
+      try {
+        await pool.query(`ALTER TABLE media ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'approved'`);
+        await pool.query(`ALTER TABLE media ADD COLUMN IF NOT EXISTS upload_type VARCHAR(20) DEFAULT 'single'`);
+      } catch (e) { /* ignore */ }
+      // Document cover image columns
+      try {
+        await pool.query(`ALTER TABLE document_revisions ADD COLUMN IF NOT EXISTS cover_image TEXT`);
+        await pool.query(`ALTER TABLE media ADD COLUMN IF NOT EXISTS cover_image TEXT`);
+      } catch (e) { /* ignore */ }
       // Always seed users - will skip if they exist
       await seedDatabase();
       return pool;
@@ -164,6 +193,9 @@ const createTables = async dbPool => {
             created_by INTEGER,
             created_by_name VARCHAR(255),
             status VARCHAR(50) DEFAULT 'pending',
+            rejection_reason TEXT,
+            rejected_by VARCHAR(255),
+            rejected_at TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -280,6 +312,20 @@ const createTables = async dbPool => {
       console.log('Bulletin migration note:', e.message);
     }
 
+    // Media attachment columns
+    try {
+      await dbPool.query(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS preview_image VARCHAR(500)`);
+      await dbPool.query(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS attached_documents JSONB DEFAULT '[]'`);
+      await dbPool.query(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS attached_videos JSONB DEFAULT '[]'`);
+      await dbPool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS preview_image VARCHAR(500)`);
+      await dbPool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS attached_documents JSONB DEFAULT '[]'`);
+      await dbPool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS attached_videos JSONB DEFAULT '[]'`);
+      await dbPool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS image_layouts JSONB DEFAULT '{}'`);
+      console.log('Media attachment columns verified');
+    } catch (e) {
+      console.log('Media attachment migration note:', e.message);
+    }
+
     // Community pages migration - add level and branch columns
     // Using a safer approach that works across PostgreSQL versions
     try {
@@ -290,6 +336,15 @@ const createTables = async dbPool => {
       if (levelCheck.rows.length === 0) {
         await dbPool.query(`ALTER TABLE pages ADD COLUMN level INTEGER DEFAULT 1`);
         console.log('Added level column to pages table');
+      }
+
+      // Check if page_type column exists
+      const pageTypeCheck = await dbPool.query(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = 'pages' AND column_name = 'page_type'"
+      );
+      if (pageTypeCheck.rows.length === 0) {
+        await dbPool.query(`ALTER TABLE pages ADD COLUMN page_type VARCHAR(20) DEFAULT 'leaf'`);
+        console.log('Added page_type column to pages table');
       }
 
       // Check if branch column exists
@@ -320,7 +375,6 @@ const seedDatabase = async () => {
   try {
     // Check if users already exist
     const userCheck = await pool.query('SELECT COUNT(*) FROM users');
-    console.log('DEBUG: User count:', userCheck.rows[0].count);
 
     if (parseInt(userCheck.rows[0].count) === 0) {
       // Use environment variables for seeds or generate random passwords
@@ -336,8 +390,7 @@ const seedDatabase = async () => {
             ON CONFLICT (username) DO NOTHING;
         `;
       await pool.query(seedUsers, [hashedAdminPassword]);
-      console.log('Default users seeded!');
-      console.log('Login with: superadmin / admin123');
+      console.log('Default admin user seeded. Change the password immediately after first login.');
     } else {
       console.log('Users already exist, skipping seed');
     }

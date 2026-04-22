@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const bodyParser = require('body-parser');
 const nodemailer = require('nodemailer');
 const { v4: uuidv4 } = require('uuid');
@@ -31,7 +32,7 @@ const schemas = {
       .min(1)
       .max(255)
       .pattern(/^[a-z0-9-]+$/)
-      .required(),
+      .allow('', null),
     content: Joi.string().max(50000).allow('', null),
     path: Joi.string().max(255).allow('', null),
     parentId: Joi.number().integer().positive().allow(null),
@@ -40,7 +41,9 @@ const schemas = {
     status: Joi.string().valid('draft', 'published').default('draft'),
     sections: Joi.any(), // Allow sections array from frontend
     changeDescription: Joi.string().max(1000).allow('', null),
-    branch: Joi.string().max(100).allow('', null), // Branch field for community pages
+    branch: Joi.string().max(100).allow('', null),
+    attached_documents: Joi.array().items(Joi.object()).allow(null),
+    attached_videos: Joi.array().items(Joi.object()).allow(null),
   }),
 
   pageUpdate: Joi.object({
@@ -48,12 +51,15 @@ const schemas = {
     slug: Joi.string()
       .min(1)
       .max(255)
-      .pattern(/^[a-z0-9-]+$/),
+      .pattern(/^[a-z0-9/-]+$/),
     content: Joi.string().max(50000).allow('', null),
     path: Joi.string().max(255).allow('', null),
     parentId: Joi.number().integer().positive().allow(null),
     templateId: Joi.string().max(100).allow('', null),
     changeDescription: Joi.string().max(1000).allow('', null),
+    preview_image: Joi.string().max(500).allow('', null),
+    attached_documents: Joi.array().items(Joi.object()).allow(null),
+    attached_videos: Joi.array().items(Joi.object()).allow(null),
     sections: Joi.any(),
     branch: Joi.string().max(100).allow('', null),
   }),
@@ -70,6 +76,10 @@ const schemas = {
     is_pinned: Joi.boolean().default(false),
     pdf_url: Joi.string().max(500).allow('', null),
     event_date: Joi.string().allow('', null),
+    preview_image: Joi.string().max(500).allow('', null),
+    attached_documents: Joi.array().items(Joi.object()).allow(null),
+    attached_videos: Joi.array().items(Joi.object()).allow(null),
+    image_layouts: Joi.object().allow(null),
   }),
 
   postUpdate: Joi.object({
@@ -82,6 +92,10 @@ const schemas = {
     is_pinned: Joi.boolean().default(false),
     pdf_url: Joi.string().max(500).allow('', null),
     event_date: Joi.string().allow('', null),
+    preview_image: Joi.string().max(500).allow('', null),
+    attached_documents: Joi.array().items(Joi.object()).allow(null),
+    attached_videos: Joi.array().items(Joi.object()).allow(null),
+    image_layouts: Joi.object().allow(null),
   }),
 
   userCreate: Joi.object({
@@ -112,6 +126,13 @@ const schemas = {
     type: Joi.string().valid('image', 'video', 'document').required(),
     url: Joi.string().uri().max(500).required(),
     category: Joi.string().max(100).allow(''),
+  }),
+
+  videoLinkCreate: Joi.object({
+    url: Joi.string().uri({ scheme: ['http', 'https'] }).max(500).required(),
+    title: Joi.string().min(1).max(255).required(),
+    description: Joi.string().max(1000).allow('', null),
+    thumbnail: Joi.string().uri({ scheme: ['http', 'https'] }).max(500).allow('', null),
   }),
 
   login: Joi.object({
@@ -170,9 +191,36 @@ const handleError = (error, res, context = 'API endpoint') => {
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// ============ SECURITY HEADERS (helmet) ============
+app.use(helmet({
+  // Allow uploaded files (images, PDFs) to be loaded cross-origin by the React frontend
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  // Disable CSP for API-only server; React SPA on Vercel manages its own CSP
+  contentSecurityPolicy: false,
+  // HSTS: tell browsers to always use HTTPS
+  strictTransportSecurity: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true,
+  },
+}));
+
 // ============ STATIC FILE SERVING ============
-// Serve uploaded files from public/uploads
-app.use('/uploads', express.static(path.join(__dirname, '..', 'public', 'uploads')));
+// Images served inline; all other uploads (PDFs, docs, SVGs) forced to download
+// to prevent in-browser rendering of potentially malicious files.
+const INLINE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp']);
+app.use('/uploads', express.static(path.join(__dirname, '..', 'public', 'uploads'), {
+  setHeaders: (res, filePath) => {
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === '.svg') {
+      // SVG can run scripts when rendered inline — force download
+      res.setHeader('Content-Type', 'image/svg+xml');
+      res.setHeader('Content-Disposition', 'attachment');
+    } else if (!INLINE_EXTS.has(ext)) {
+      res.setHeader('Content-Disposition', 'attachment');
+    }
+  },
+}));
 
 // ============ MULTER FILE UPLOAD SETUP ============
 const uploadsDir = path.join(__dirname, '..', 'public', 'uploads');
@@ -180,19 +228,33 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
+const SAFE_EXT_MAP = {
+  'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif',
+  'image/webp': '.webp', 'image/svg+xml': '.svg',
+  'application/pdf': '.pdf',
+  'application/msword': '.doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+  'application/vnd.ms-powerpoint': '.ppt',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+  'application/vnd.ms-excel': '.xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+  'text/plain': '.txt', 'text/csv': '.csv',
+};
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, uploadsDir);
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
+    // Use MIME-derived extension only — prevents path traversal via crafted filenames
+    const safeExt = SAFE_EXT_MAP[file.mimetype] || '.bin';
+    cb(null, uuidv4() + safeExt);
   },
 });
 
 const upload = multer({
   storage,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
   fileFilter: (req, file, cb) => {
     const allowedMimes = [
       'image/jpeg',
@@ -230,10 +292,13 @@ const generalLimiter = rateLimit({
   skip: req => req.path.includes('/api/logs') || req.path.includes('/api/media'),
 });
 
+const isTestEnv = () => process.env.NODE_ENV === 'test';
+
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5,
+  max: 20,
   message: { error: 'Too many login attempts, please try again later' },
+  skip: () => isTestEnv(),
 });
 
 // Stricter limiter for write operations (POST/PUT/DELETE)
@@ -241,6 +306,7 @@ const writeLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 50,
   message: { error: 'Too many write requests, please try again later' },
+  skip: () => isTestEnv(),
 });
 
 // Strict limiter for user management operations
@@ -248,20 +314,41 @@ const userManagementLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
   message: { error: 'Too many user management requests, please try again later' },
+  skip: () => isTestEnv(),
+});
+
+// Strict limiter for public contact form
+const emailLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5,
+  message: { error: 'Too many messages sent. Please try again later.' },
+  skip: () => isTestEnv(),
 });
 
 // ============ SECURITY: CORS ============
 // ============ CORS CONFIGURATION ============
 const allowedOrigins = [
   'http://localhost:3000',
+  'http://23.20.179.157',
   'https://holy-name-catholic-parish-htwr.vercel.app',
-  'https://holy-name-catholic-parish.onrender.com'
-];
+  'https://holy-name-catholic-parish.onrender.com',
+  process.env.FRONTEND_URL,         // set in .env on AWS: FRONTEND_URL=https://23.20.179.157
+  process.env.FRONTEND_WWW_URL,     // set in .env on AWS: FRONTEND_WWW_URL=https://23.20.179.157
+].filter(Boolean);
 
 const corsOptions = {
-  origin: function(origin, callback) {
-    // Allow all origins for now - can tighten later
-    callback(null, true);
+  origin: function (origin, callback) {
+    // In production, require an explicit origin. Allow no-origin only in development (curl, tools).
+    if (!origin) {
+      if (process.env.NODE_ENV === 'production') {
+        return callback(new Error('CORS: requests without an origin are not allowed in production'));
+      }
+      return callback(null, true);
+    }
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error(`CORS: origin ${origin} not allowed`));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -274,7 +361,8 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 app.use(generalLimiter);
 app.use(logger.middleware());
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '1mb' }));
+app.use(bodyParser.urlencoded({ extended: true, limit: '1mb' }));
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -309,23 +397,19 @@ app.use((req, res, next) => {
 // ============ AUTH MIDDLEWARE ============
 const authenticate = async (req, res, next) => {
   const authHeader = req.headers.authorization;
-  console.log('DEBUG: Auth header:', authHeader ? authHeader.substring(0, 30) + '...' : 'none');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'No token provided' });
   }
   const token = authHeader.substring(7);
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    console.log('DEBUG: Token decoded:', decoded);
     const result = await db.pool.query('SELECT * FROM users WHERE id = $1', [decoded.userId]);
-    console.log('DEBUG: User found:', result.rows.length > 0);
     if (result.rows.length === 0) {
       return res.status(401).json({ error: 'Invalid token' });
     }
     req.user = result.rows[0];
     next();
   } catch (error) {
-    console.log('DEBUG: Auth error:', error.message);
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({ error: 'Token expired' });
     }
@@ -354,6 +438,19 @@ const requireSoccomAdminOnly = (req, res, next) => {
     return res.status(403).json({ error: 'Content creator access required' });
   }
   next();
+};
+
+// Non-blocking auth check — returns true if request carries a valid token.
+// Used to conditionally filter draft content from public API responses.
+const isAuthenticated = req => {
+  try {
+    const header = req.headers.authorization;
+    if (!header || !header.startsWith('Bearer ')) return false;
+    jwt.verify(header.substring(7), JWT_SECRET);
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 // Both Super Admin and SocCom Admin can delete media
@@ -386,9 +483,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
   }
 
   try {
-    console.log('DEBUG: Login for user:', username, 'password length:', password?.length);
     const result = await db.pool.query('SELECT * FROM users WHERE username = $1', [username]);
-    console.log('DEBUG: User found:', result.rows.length > 0);
 
     if (result.rows.length === 0) {
       logger.auth('LOGIN_FAILED', null, { username, reason: 'User not found' });
@@ -396,9 +491,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     }
 
     const user = result.rows[0];
-    console.log('DEBUG: Stored password hash:', user.password.substring(0, 20) + '...');
     const isValidPassword = await bcrypt.compare(password, user.password);
-    console.log('DEBUG: Password valid:', isValidPassword);
 
     if (!isValidPassword) {
       logger.auth('LOGIN_FAILED', user.id, { username, reason: 'Invalid password' });
@@ -408,7 +501,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
     const token = jwt.sign(
       { userId: user.id, role: user.role, username: user.username },
       JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn: '4h' }
     );
 
     logger.auth('LOGIN_SUCCESS', user.id, { username, role: user.role });
@@ -419,7 +512,6 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
       token,
     });
   } catch (error) {
-    console.log('DEBUG: Login error:', error.message);
     logger.error('Login error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -427,6 +519,190 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
 
 app.get('/api/auth/me', authenticate, (req, res) => {
   res.json({ user: req.user });
+});
+
+// ============ SEED SYSTEM PAGES (Super Admin Only) ============
+// Seeds all hardcoded React component pages into the DB so admins can manage them
+app.post('/api/admin/seed-pages', authenticate, requireSuperAdmin, async (req, res) => {
+  try {
+    // List of all hardcoded pages with their hierarchy
+    // Format: { title, slug, path, page_type, branch, parent_slug }
+    const systemPages = [
+      // ---- TOP-LEVEL SECTIONS ----
+      { title: 'Home', slug: 'home', path: '/', page_type: 'leaf', branch: null },
+      { title: 'About', slug: 'about', path: '/about', page_type: 'leaf', branch: null },
+      { title: 'News & Posts', slug: 'posts', path: '/posts', page_type: 'leaf', branch: null },
+      { title: 'Communities', slug: 'communities', path: '/communities', page_type: 'branch', branch: null },
+      { title: 'Events', slug: 'events', path: '/events', page_type: 'branch', branch: null },
+      { title: 'Gallery', slug: 'gallery', path: '/gallery', page_type: 'leaf', branch: null },
+      { title: 'Programs', slug: 'programs', path: '/programs', page_type: 'leaf', branch: null },
+      { title: 'Library', slug: 'library', path: '/library', page_type: 'leaf', branch: null },
+      { title: 'International Outreach', slug: 'international-outreach', path: '/international-outreach', page_type: 'leaf', branch: null },
+      {
+        title: 'Contact Us',
+        slug: 'contact',
+        path: '/contact',
+        page_type: 'leaf',
+        branch: null,
+        content: JSON.stringify({
+          title: 'Contact Us',
+          subtitle: 'Get in touch with Holy Name Parish',
+          contacts: [
+            {
+              field: 'Contacts', color: 'bg-blue-parish', hoverColor: 'hover:bg-blue-dark',
+              subFields: [
+                { subField: 'Parish Office', numbers: [{ number: '+263 242 306345', email: 'holynamemabelreign@gmail.com' }] },
+                { subField: 'Parish Priest', numbers: [{ name: 'Fr Ndhlalambi', number: '+263772402220', email: 'jndhlalambi@gmail.com' }] },
+                { subField: 'Assistant Parish Priest', numbers: [{ name: 'Fr Jingisoni', number: '+263772300024', email: 'giftjingison@gmail.com' }] },
+              ],
+            },
+            {
+              field: 'Guilds', color: 'bg-[#2E7D32]', hoverColor: 'hover:bg-[#1B5E20]',
+              subFields: [
+                { subField: 'Emily Mari', numbers: [{ name: 'Emily Mari', number: '+263777163212' }] },
+                { subField: 'Sacred Heart Youth Guild', numbers: [{ name: 'Chairperson: Arthur Hukama', number: '+263 783808377' }] },
+                { subField: 'Hosi Yedenga', numbers: [{ name: 'Mrs M Choto', number: '+263772847374' }, { name: 'Mrs P Mautsa', number: '+263733756454' }] },
+              ],
+            },
+            {
+              field: 'Sections', color: 'bg-[#C9A84C]', hoverColor: 'hover:bg-[#b8973f]', textColor: 'text-gray-900',
+              subFields: [
+                { subField: 'Parachute Regiment', numbers: [{ name: 'Mr V Mudimu', number: '+263773382139' }] },
+                { subField: 'Bloomingdale', numbers: [{ name: 'Mr Chisuro', number: '+263781907444' }] },
+                { subField: 'Meyrick Park', numbers: [{ name: 'Mrs Thoko Nyandoro', number: '+263772423383' }] },
+              ],
+            },
+            {
+              field: 'Groups', color: 'bg-[#BA0021]', hoverColor: 'hover:bg-[#9a001c]',
+              subFields: [
+                { subField: 'SOCCOM', numbers: [{ name: 'Mr D Kunaka', number: '+263 775063153' }, { name: 'Hunter Mupfurutsa', number: '+263 789864886' }] },
+                { subField: 'Catechesis', numbers: [{ name: 'Mr Felix Manyimbiri', number: '+263772392965' }] },
+                { subField: 'Ministry of Matrimony', numbers: [{ name: 'Mr Felix Manyimbiri', number: '+263772392965' }] },
+                { subField: 'Family Apostolate', numbers: [{ name: 'Ms Leonora Mawire', number: '+263 774161458' }] },
+              ],
+            },
+          ],
+        }),
+      },
+
+      // ---- SECTIONS ----
+      { title: 'Parachute Regiment', slug: 'communities/sections/parachute-regiment', path: '/communities/sections/parachute-regiment', page_type: 'leaf', branch: 'sections', parent_slug: 'communities' },
+      { title: 'Avondale West', slug: 'communities/sections/avondale-west', path: '/communities/sections/avondale-west', page_type: 'leaf', branch: 'sections', parent_slug: 'communities' },
+      { title: 'Bloomingdale', slug: 'communities/sections/bloomingdale', path: '/communities/sections/bloomingdale', page_type: 'leaf', branch: 'sections', parent_slug: 'communities' },
+      { title: 'Meyrick Park', slug: 'communities/sections/meyrick-park', path: '/communities/sections/meyrick-park', page_type: 'leaf', branch: 'sections', parent_slug: 'communities' },
+      { title: 'Cotswold Hills', slug: 'communities/sections/cotswold-hills', path: '/communities/sections/cotswold-hills', page_type: 'leaf', branch: 'sections', parent_slug: 'communities' },
+      { title: 'Mabelreign Central', slug: 'communities/sections/mabelreign-central', path: '/communities/sections/mabelreign-central', page_type: 'leaf', branch: 'sections', parent_slug: 'communities' },
+      { title: 'Haig Park', slug: 'communities/sections/haig-park', path: '/communities/sections/haig-park', page_type: 'leaf', branch: 'sections', parent_slug: 'communities' },
+
+      // ---- CHOIR ----
+      {
+        title: 'English Choir', slug: 'communities/choir/english', path: '/communities/choir/english', page_type: 'leaf', branch: 'choir', parent_slug: 'communities',
+        content: JSON.stringify([
+          { id: 'intro', title: 'Introduction', data: { heading: 'Holy Name Mabelreign English Choir', body: 'Singing is a vital part of liturgy, enhancing worship and uplifting the congregation. The English Choir at Holy Name Mabelreign has played a key role in bringing vibrancy to the English Mass, fostering active participation and praise.' } },
+          { id: 'history', title: 'History', data: { heading: 'History', body: 'Established in the early 1980s, the choir has undergone significant changes, from the early days of organ music to the integration of guitars and youth participation. Notable leaders and musicians, such as Mrs. Nyahasha and Mr. Chichi, have shaped its growth, making the choir a vital part of parish life.' } },
+          { id: 'achievements', title: 'Achievements', data: { heading: 'Achievements', body: 'Recorded and released a CD in 2014 under the leadership of Mrs. Stella Muza.\nCompiled a local hymn book with 25 copies for choir members.\nPrepared for a second CD recording in collaboration with St. John\'s High School.' } },
+          { id: 'membership', title: 'Membership', data: { heading: 'Membership Dynamics', body: 'The English Choir has around 30 active members, with a fluid membership as individuals join or leave. Youth involvement remains a focus, with notable young talents actively participating.' } },
+          { id: 'collab', title: 'Collaboration', data: { heading: 'Collaboration', body: 'The choir collaborates with the Shona Choir for combined Masses and community events, such as weddings and interdenominational services during Christmas and Easter. They also host an annual Christmas carol service.' } },
+        ]),
+      },
+      { title: 'Shona Choir', slug: 'communities/choir/shona', path: '/communities/choir/shona', page_type: 'leaf', branch: 'choir', parent_slug: 'communities' },
+
+      // ---- COMMITTEES ----
+      { title: 'Main Governing Committee', slug: 'communities/committees/main-gov', path: '/communities/committees/main-gov', page_type: 'leaf', branch: 'committees', parent_slug: 'communities' },
+      { title: 'Family Apostolate', slug: 'communities/committees/family-apostolate', path: '/communities/committees/family-apostolate', page_type: 'leaf', branch: 'committees', parent_slug: 'communities' },
+      { title: 'Youth Council', slug: 'communities/committees/youth-council', path: '/communities/committees/youth-council', page_type: 'branch', branch: 'committees', parent_slug: 'communities' },
+      { title: 'Altar Servers', slug: 'communities/committees/altar-servers', path: '/communities/committees/altar-servers', page_type: 'branch', branch: 'committees', parent_slug: 'communities' },
+      { title: 'Missionary Childhood', slug: 'communities/committees/missionary-childhood', path: '/communities/committees/missionary-childhood', page_type: 'branch', branch: 'committees', parent_slug: 'communities' },
+
+      // ---- SUPPORT TEAMS ----
+      { title: 'SocCom', slug: 'communities/support-teams/soccom', path: '/communities/support-teams/soccom', page_type: 'leaf', branch: 'support-teams', parent_slug: 'communities' },
+      { title: 'Catechesis', slug: 'communities/support-teams/catechesis', path: '/communities/support-teams/catechesis', page_type: 'leaf', branch: 'support-teams', parent_slug: 'communities' },
+      { title: 'CCR', slug: 'communities/support-teams/ccr', path: '/communities/support-teams/ccr', page_type: 'leaf', branch: 'support-teams', parent_slug: 'communities' },
+
+      // ---- ADULT GUILDS ----
+      { title: 'Chemwoyo Guild', slug: 'communities/adult-guilds/chemwoyo', path: '/communities/adult-guilds/chemwoyo', page_type: 'leaf', branch: 'adult-guilds', parent_slug: 'communities' },
+      { title: 'Cha Mariya Guild', slug: 'communities/adult-guilds/chamariya', path: '/communities/adult-guilds/chamariya', page_type: 'leaf', branch: 'adult-guilds', parent_slug: 'communities' },
+      { title: 'St Anne Guild', slug: 'communities/adult-guilds/st-anne', path: '/communities/adult-guilds/st-anne', page_type: 'branch', branch: 'adult-guilds', parent_slug: 'communities' },
+      { title: 'St Joachim Guild', slug: 'communities/adult-guilds/st-joachim', path: '/communities/adult-guilds/st-joachim', page_type: 'branch', branch: 'adult-guilds', parent_slug: 'communities' },
+      { title: 'St Joseph Guild', slug: 'communities/adult-guilds/st-joseph', path: '/communities/adult-guilds/st-joseph', page_type: 'branch', branch: 'adult-guilds', parent_slug: 'communities' },
+
+      // ---- YOUTH GUILDS ----
+      { title: 'Moyo Musande Guild', slug: 'communities/youth-guilds/musande', path: '/communities/youth-guilds/musande', page_type: 'leaf', branch: 'youth-guilds', parent_slug: 'communities' },
+      { title: 'Agnes & Alois Guild', slug: 'communities/youth-guilds/agnes-alois', path: '/communities/youth-guilds/agnes-alois', page_type: 'branch', branch: 'youth-guilds', parent_slug: 'communities' },
+      { title: 'St Peter & Mary Guild', slug: 'communities/youth-guilds/st-peter-mary', path: '/communities/youth-guilds/st-peter-mary', page_type: 'branch', branch: 'youth-guilds', parent_slug: 'communities' },
+      { title: 'St Mary Youth Guild', slug: 'communities/youth-guilds/st-mary-youth', path: '/communities/youth-guilds/st-mary-youth', page_type: 'branch', branch: 'youth-guilds', parent_slug: 'communities' },
+      { title: 'CYA', slug: 'communities/youth-guilds/cya', path: '/communities/youth-guilds/cya', page_type: 'branch', branch: 'youth-guilds', parent_slug: 'communities' },
+
+      // ---- EVENTS ----
+      { title: 'Special Events', slug: 'events/special-events', path: '/events/special-events', page_type: 'leaf', branch: null, parent_slug: 'events' },
+    ];
+
+    let seeded = 0;
+    let skipped = 0;
+
+    for (const pg of systemPages) {
+      // Resolve parent_id if parent_slug given
+      let parentId = null;
+      if (pg.parent_slug) {
+        const parentRow = await db.pool.query('SELECT id FROM pages WHERE slug = $1', [pg.parent_slug]);
+        if (parentRow.rows.length > 0) parentId = parentRow.rows[0].id;
+      }
+
+      const existing = await db.pool.query('SELECT id FROM pages WHERE slug = $1', [pg.slug]);
+      if (existing.rows.length > 0) {
+        // Update page_type and content for existing system pages
+        await db.pool.query(
+          `UPDATE pages SET page_type = $1, parent_id = COALESCE(parent_id, $2),
+           content = COALESCE(NULLIF(content, ''), $3)
+           WHERE slug = $4`,
+          [pg.page_type, parentId, pg.content || null, pg.slug]
+        );
+        skipped++;
+        continue;
+      }
+
+      await db.pool.query(
+        `INSERT INTO pages (title, slug, path, page_type, parent_id, content, author_id, author_name, status, visible, branch)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [pg.title, pg.slug, pg.path, pg.page_type, parentId, pg.content || null, req.user.id, 'System', 'live', true, pg.branch]
+      );
+      seeded++;
+    }
+
+    res.json({ message: `Seeded ${seeded} system pages, updated ${skipped} existing.`, seeded, skipped });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/admin/bulk-publish — make all seeded/system pages live and visible
+app.post('/api/admin/bulk-publish', authenticate, requireSuperAdmin, async (req, res) => {
+  try {
+    // Publish pages that are authored by 'System' (seeded) or have no content (stub pages)
+    // Also accepts optional array of specific slugs to target
+    const { slugs } = req.body; // optional: array of slug strings
+
+    let result;
+    if (Array.isArray(slugs) && slugs.length > 0) {
+      const placeholders = slugs.map((_, i) => `$${i + 1}`).join(',');
+      result = await db.pool.query(
+        `UPDATE pages SET status = 'live', visible = true, updated_at = CURRENT_TIMESTAMP
+         WHERE slug IN (${placeholders}) RETURNING id, title, slug`,
+        slugs
+      );
+    } else {
+      // Default: publish all pages seeded by 'System' that are not already live
+      result = await db.pool.query(
+        `UPDATE pages SET status = 'live', visible = true, updated_at = CURRENT_TIMESTAMP
+         WHERE author_name = 'System' AND (status != 'live' OR visible = false)
+         RETURNING id, title, slug`
+      );
+    }
+
+    res.json({ message: `Published ${result.rows.length} pages.`, pages: result.rows });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // ============ USER MANAGEMENT (Super Admin Only) ============
@@ -580,10 +856,11 @@ app.get('/api/templates', async (req, res) => {
 
 app.get('/api/pages', async (req, res) => {
   try {
-    const page = Math.max(1, parseInt(req.query.page) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
     const offset = (page - 1) * limit;
     const branch = req.query.branch || null;
+    const admin = isAuthenticated(req);
 
     let where = '';
     const params = [];
@@ -591,6 +868,12 @@ app.get('/api/pages', async (req, res) => {
     if (branch) {
       where = 'WHERE branch = $1';
       params.push(branch);
+    }
+
+    // Public requests only see published/visible pages — admins see all
+    if (!admin) {
+      const cond = "visible = true AND status = 'live'";
+      where = where ? `${where} AND ${cond}` : `WHERE ${cond}`;
     }
 
     const dataParams = [...params, limit, offset];
@@ -659,7 +942,35 @@ app.get('/api/pages/slug/:slug', async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Page not found' });
     }
-    res.json(result.rows[0]);
+    const p = result.rows[0];
+    if (!isAuthenticated(req) && (!p.visible || p.status !== 'live')) {
+      return res.status(404).json({ error: 'Page not found' });
+    }
+    res.json(p);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/pages/by-path?path= — look up a page by its full URL path
+// Strips leading slash and tries: slug match, path match, or path without leading slash
+app.get('/api/pages/by-path', async (req, res) => {
+  try {
+    const rawPath = (req.query.path || '').replace(/^\//, '');
+    if (!rawPath) return res.status(400).json({ error: 'path query param required' });
+
+    const result = await db.pool.query(
+      `SELECT * FROM pages WHERE slug = $1 OR path = $2 OR path = $3 LIMIT 1`,
+      [rawPath, rawPath, `/${rawPath}`]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Page not found' });
+    }
+    const p = result.rows[0];
+    if (!isAuthenticated(req) && (!p.visible || p.status !== 'live')) {
+      return res.status(404).json({ error: 'Page not found' });
+    }
+    res.json(p);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -671,7 +982,11 @@ app.get('/api/pages/:id', async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Page not found' });
     }
-    res.json(result.rows[0]);
+    const p = result.rows[0];
+    if (!isAuthenticated(req) && (!p.visible || p.status !== 'live')) {
+      return res.status(404).json({ error: 'Page not found' });
+    }
+    res.json(p);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -685,11 +1000,23 @@ app.post(
   writeLimiter,
   validate(schemas.pageCreate),
   async (req, res) => {
-    const { title, slug, path, content, templateId, visible, status, parentId, branch } =
+    const { title, slug, path, content, templateId, visible, status, parentId, branch,
+      attached_documents, attached_videos } =
       req.validatedBody;
     try {
-      let finalSlug = slug;
-      let finalPath = path;
+      // Auto-generate slug from title when not provided
+      const baseSlug =
+        slug ||
+        title
+          .toLowerCase()
+          .replace(/\s+/g, '-')
+          .replace(/[^a-z0-9-]/g, '')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '') ||
+        `page-${Date.now()}`;
+
+      let finalSlug = baseSlug;
+      let finalPath = path || null;
 
       // If parentId is provided, auto-generate slug based on parent hierarchy
       if (parentId) {
@@ -700,12 +1027,7 @@ app.post(
         if (parentResult.rows.length > 0) {
           const parent = parentResult.rows[0];
           // Generate nested slug: parent-slug/child-slug
-          const childSlug =
-            slug ||
-            title
-              .toLowerCase()
-              .replace(/\s+/g, '-')
-              .replace(/[^a-z0-9-]/g, '');
+          const childSlug = baseSlug;
           finalSlug = `${parent.slug}/${childSlug}`;
           // Build full path: parent-path/child-path
           finalPath = parent.path ? `${parent.path}/${childSlug}` : `/${childSlug}`;
@@ -722,7 +1044,7 @@ app.post(
       }
 
       const result = await db.pool.query(
-        'INSERT INTO pages (title, slug, path, parent_id, content, template_id, author_id, author_name, status, visible, branch) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *',
+        'INSERT INTO pages (title, slug, path, parent_id, content, template_id, author_id, author_name, status, visible, branch, attached_documents, attached_videos) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *',
         [
           title,
           finalSlug,
@@ -735,6 +1057,8 @@ app.post(
           status || 'draft',
           visible || false,
           branch || null,
+          JSON.stringify(attached_documents || []),
+          JSON.stringify(attached_videos || []),
         ]
       );
       await db.pool.query('INSERT INTO logs (action, user_name, details) VALUES ($1, $2, $3)', [
@@ -762,11 +1086,15 @@ app.put(
   requireSoccomAdmin,
   validate(schemas.pageUpdate),
   async (req, res) => {
-    const { title, slug, path, content, templateId, parentId, branch } = req.validatedBody;
+    const { title, slug, path, content, templateId, parentId, branch, preview_image, attached_documents, attached_videos } = req.validatedBody;
     try {
       const result = await db.pool.query(
-        'UPDATE pages SET title = $1, slug = $2, path = $3, content = $4, template_id = $5, parent_id = $6, branch = $7, updated_at = CURRENT_TIMESTAMP WHERE id = $8 RETURNING *',
-        [title, slug, path, content, templateId, parentId || null, branch || null, req.params.id]
+        `UPDATE pages SET title=$1, slug=$2, path=$3, content=$4, template_id=$5, parent_id=$6, branch=$7,
+         preview_image=$8, attached_documents=$9, attached_videos=$10,
+         updated_at=CURRENT_TIMESTAMP WHERE id=$11 RETURNING *`,
+        [title, slug, path, content, templateId, parentId || null, branch || null,
+          preview_image || null, JSON.stringify(attached_documents || []), JSON.stringify(attached_videos || []),
+          req.params.id]
       );
       if (result.rows.length === 0) {
         return res.status(404).json({ error: 'Page not found' });
@@ -784,28 +1112,35 @@ app.put(
 );
 
 // PATCH /api/pages/:id/visibility - Super Admin only (publishing control)
-app.patch('/api/pages/:id/visibility', authenticate, requireSuperAdminOnly, async (req, res) => {
-  try {
-    const result = await db.pool.query(
-      'UPDATE pages SET visible = NOT visible, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *',
-      [req.params.id]
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Page not found' });
+app.patch(
+  '/api/pages/:id/visibility',
+  authenticate,
+  requireSuperAdminOnly,
+  validate(schemas.visibilityToggle),
+  async (req, res) => {
+    try {
+      const { visible } = req.validatedBody;
+      const result = await db.pool.query(
+        'UPDATE pages SET visible = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *',
+        [visible, req.params.id]
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: 'Page not found' });
+      }
+      await db.pool.query('INSERT INTO logs (action, user_name, details) VALUES ($1, $2, $3)', [
+        'PAGE_VISIBILITY_TOGGLE',
+        req.user.username,
+        JSON.stringify({ pageId: req.params.id, visible }),
+      ]);
+      res.json(result.rows[0]);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
     }
-    await db.pool.query('INSERT INTO logs (action, user_name, details) VALUES ($1, $2, $3)', [
-      'PAGE_VISIBILITY_TOGGLE',
-      req.user.username,
-      JSON.stringify({ pageId: req.params.id, visible: result.rows[0].visible }),
-    ]);
-    res.json(result.rows[0]);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
   }
-});
+);
 
-// DELETE /api/pages/:id - SocCom Admin ONLY deletes content (Super Admin cannot delete)
-app.delete('/api/pages/:id', authenticate, requireSoccomAdminOnly, async (req, res) => {
+// DELETE /api/pages/:id - SocCom Admin or Super Admin can delete
+app.delete('/api/pages/:id', authenticate, requireSoccomAdmin, async (req, res) => {
   try {
     await db.pool.query('DELETE FROM pages WHERE id = $1', [req.params.id]);
     await db.pool.query('INSERT INTO logs (action, user_name, details) VALUES ($1, $2, $3)', [
@@ -870,22 +1205,26 @@ app.post('/api/pages/:id/submit', authenticate, requireSoccomAdmin, async (req, 
 
 app.get('/api/posts', async (req, res) => {
   try {
-    const page = Math.max(1, parseInt(req.query.page) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
     const offset = (page - 1) * limit;
+    const admin = isAuthenticated(req);
+
+    // Public requests only see live/visible posts — admins see all
+    const filter = admin ? '' : "WHERE visible = true AND status = 'live'";
     const [dataResult, countResult] = await Promise.all([
-      db.pool.query('SELECT * FROM posts ORDER BY created_at DESC LIMIT $1 OFFSET $2', [
-        limit,
-        offset,
-      ]),
-      db.pool.query('SELECT COUNT(*) FROM posts'),
+      db.pool.query(
+        `SELECT * FROM posts ${filter} ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+        [limit, offset]
+      ),
+      db.pool.query(`SELECT COUNT(*) FROM posts ${filter}`),
     ]);
     res.json({
       data: dataResult.rows,
       pagination: {
         page,
         limit,
-        total: parseInt(countResult.rows[0].count),
+        total: parseInt(countResult.rows[0].count, 10),
         totalPages: Math.ceil(countResult.rows[0].count / limit),
       },
     });
@@ -925,13 +1264,15 @@ app.get('/api/posts/with-submission-status', authenticate, async (req, res) => {
         `;
 
     // SocCom admins only see their own posts, super admins see all
+    const params = [];
     if (user.role === 'soccom_admin') {
-      query += ` WHERE p.author_id = ${user.id}`;
+      params.push(user.id);
+      query += ` WHERE p.author_id = $${params.length}`;
     }
 
     query += ` ORDER BY p.created_at DESC`;
 
-    const result = await db.pool.query(query);
+    const result = await db.pool.query(query, params);
     res.json(result.rows);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -963,7 +1304,11 @@ app.get('/api/posts/:id', async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Post not found' });
     }
-    res.json(result.rows[0]);
+    const post = result.rows[0];
+    if (!isAuthenticated(req) && (!post.visible || post.status !== 'live')) {
+      return res.status(404).json({ error: 'Post not found' });
+    }
+    res.json(post);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -978,37 +1323,32 @@ app.post(
   validate(schemas.postCreate),
   async (req, res) => {
     const {
-      title,
-      excerpt,
-      content,
-      category,
-      images,
-      visible,
-      status,
-      is_bulletin,
-      is_pinned,
-      pdf_url,
-      event_date,
+      title, excerpt, content, category, images,
+      visible, status, is_bulletin, is_pinned, pdf_url, event_date,
+      preview_image, attached_documents, attached_videos, image_layouts,
     } = req.validatedBody;
+
+    const imgList = images || [];
+    if (imgList.length < 2) {
+      return res.status(400).json({ error: 'Posts must include at least 2 images.' });
+    }
+
     try {
       const result = await db.pool.query(
         `INSERT INTO posts (title, excerpt, content, category, images, author_id, author_name,
-              status, visible, is_bulletin, is_pinned, pdf_url, event_date)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+              status, visible, is_bulletin, is_pinned, pdf_url, event_date,
+              preview_image, attached_documents, attached_videos, image_layouts)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
         [
-          title,
-          excerpt,
-          content,
-          category,
-          images || [],
-          req.user.id,
-          req.user.name,
-          status || 'draft',
-          visible || false,
-          is_bulletin || false,
-          is_pinned || false,
-          pdf_url || null,
-          event_date || null,
+          title, excerpt, content, category, imgList,
+          req.user.id, req.user.name,
+          status || 'draft', visible || false,
+          is_bulletin || false, is_pinned || false,
+          pdf_url || null, event_date || null,
+          preview_image || null,
+          JSON.stringify(attached_documents || []),
+          JSON.stringify(attached_videos || []),
+          JSON.stringify(image_layouts || {}),
         ]
       );
       await db.pool.query('INSERT INTO logs (action, user_name, details) VALUES ($1, $2, $3)', [
@@ -1031,31 +1371,23 @@ app.put(
   validate(schemas.postUpdate),
   async (req, res) => {
     const {
-      title,
-      excerpt,
-      content,
-      category,
-      images,
-      is_bulletin,
-      is_pinned,
-      pdf_url,
-      event_date,
+      title, excerpt, content, category, images,
+      is_bulletin, is_pinned, pdf_url, event_date,
+      preview_image, attached_documents, attached_videos, image_layouts,
     } = req.validatedBody;
     try {
       const result = await db.pool.query(
         `UPDATE posts SET title=$1, excerpt=$2, content=$3, category=$4, images=$5,
               is_bulletin=$6, is_pinned=$7, pdf_url=$8, event_date=$9,
-              updated_at=CURRENT_TIMESTAMP WHERE id=$10 RETURNING *`,
+              preview_image=$10, attached_documents=$11, attached_videos=$12,
+              image_layouts=$13, updated_at=CURRENT_TIMESTAMP WHERE id=$14 RETURNING *`,
         [
-          title,
-          excerpt,
-          content,
-          category,
-          images || [],
-          is_bulletin || false,
-          is_pinned || false,
-          pdf_url || null,
-          event_date || null,
+          title, excerpt, content, category, images || [],
+          is_bulletin || false, is_pinned || false, pdf_url || null, event_date || null,
+          preview_image || null,
+          JSON.stringify(attached_documents || []),
+          JSON.stringify(attached_videos || []),
+          JSON.stringify(image_layouts || {}),
           req.params.id,
         ]
       );
@@ -1075,25 +1407,32 @@ app.put(
 );
 
 // PATCH /api/posts/:id/visibility - Super Admin only (publishing control)
-app.patch('/api/posts/:id/visibility', authenticate, requireSuperAdminOnly, async (req, res) => {
-  try {
-    const result = await db.pool.query(
-      'UPDATE posts SET visible = NOT visible, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *',
-      [req.params.id]
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Post not found' });
+app.patch(
+  '/api/posts/:id/visibility',
+  authenticate,
+  requireSuperAdminOnly,
+  validate(schemas.visibilityToggle),
+  async (req, res) => {
+    try {
+      const { visible } = req.validatedBody;
+      const result = await db.pool.query(
+        'UPDATE posts SET visible = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *',
+        [visible, req.params.id]
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: 'Post not found' });
+      }
+      await db.pool.query('INSERT INTO logs (action, user_name, details) VALUES ($1, $2, $3)', [
+        'POST_VISIBILITY_TOGGLE',
+        req.user.username,
+        JSON.stringify({ postId: req.params.id, visible }),
+      ]);
+      res.json(result.rows[0]);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
     }
-    await db.pool.query('INSERT INTO logs (action, user_name, details) VALUES ($1, $2, $3)', [
-      'POST_VISIBILITY_TOGGLE',
-      req.user.username,
-      JSON.stringify({ postId: req.params.id, visible: result.rows[0].visible }),
-    ]);
-    res.json(result.rows[0]);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
   }
-});
+);
 
 // DELETE /api/posts/:id - SocCom Admin ONLY deletes posts (Super Admin cannot delete)
 app.delete('/api/posts/:id', authenticate, requireSoccomAdminOnly, async (req, res) => {
@@ -1113,6 +1452,13 @@ app.delete('/api/posts/:id', authenticate, requireSoccomAdminOnly, async (req, r
 // POST /api/posts/:id/submit - SocCom Admin submits for review
 app.post('/api/posts/:id/submit', authenticate, requireSoccomAdmin, async (req, res) => {
   try {
+    const postCheck = await db.pool.query('SELECT images FROM posts WHERE id = $1', [req.params.id]);
+    if (postCheck.rows.length === 0) return res.status(404).json({ error: 'Post not found' });
+    const postImages = postCheck.rows[0].images || [];
+    if (postImages.length < 2) {
+      return res.status(400).json({ error: 'Posts must include at least 2 images before submitting for approval.' });
+    }
+
     await db.pool.query(
       "UPDATE posts SET status = 'pending', updated_at = CURRENT_TIMESTAMP WHERE id = $1",
       [req.params.id]
@@ -1159,8 +1505,8 @@ app.post('/api/posts/:id/submit', authenticate, requireSoccomAdmin, async (req, 
 
 app.get('/api/media', async (req, res) => {
   try {
-    const page = Math.max(1, parseInt(req.query.page) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
     const offset = (page - 1) * limit;
     const [dataResult, countResult] = await Promise.all([
       db.pool.query('SELECT * FROM media ORDER BY uploaded_at DESC LIMIT $1 OFFSET $2', [
@@ -1183,27 +1529,70 @@ app.get('/api/media', async (req, res) => {
   }
 });
 
-// POST /api/media/import - SocCom Admin ONLY imports media (Super Admin cannot import)
-app.post('/api/media/import', authenticate, requireSoccomAdminOnly, async (req, res) => {
+// Multer instance for mass image upload (images only, no size limit)
+const massUpload = multer({
+  storage,
+  fileFilter: (req, file, cb) => {
+    const imgMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
+    cb(null, imgMimes.includes(file.mimetype));
+  },
+});
+
+// POST /api/media/mass-upload - SocCom Admin uploads up to 300 images (stored as pending)
+app.post(
+  '/api/media/mass-upload',
+  authenticate,
+  requireSoccomAdminOnly,
+  (req, res, next) => {
+    massUpload.array('files', 300)(req, res, err => {
+      if (err) return res.status(400).json({ error: err.message || 'File upload error' });
+      next();
+    });
+  },
+  async (req, res) => {
+    try {
+      const files = req.files || [];
+      let uploaded = 0;
+      for (const file of files) {
+        const url = `/uploads/${file.filename}`;
+        await db.pool.query(
+          'INSERT INTO media (name, type, url, size, category, uploaded_by, status, upload_type) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+          [file.originalname, 'image', url, String(file.size), 'images', req.user.name, 'pending', 'mass']
+        );
+        uploaded++;
+      }
+
+      if (uploaded > 0) {
+        const superAdmins = await db.pool.query("SELECT id, name FROM users WHERE role = 'super_admin'");
+        for (const admin of superAdmins.rows) {
+          await db.pool.query(
+            `INSERT INTO notifications (user_id, user_name, title, message, type, related_type, related_id)
+             VALUES ($1, $2, $3, $4, 'submission', 'media', $5)`,
+            [
+              admin.id,
+              admin.name,
+              'Mass Upload Pending Approval',
+              `${req.user.name} uploaded ${uploaded} image${uploaded !== 1 ? 's' : ''} and is awaiting your approval.`,
+              0,
+            ]
+          );
+        }
+      }
+
+      res.json({ success: true, uploaded });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+// POST /api/admin/mass-approve-media - Super Admin approves all pending mass-uploaded images
+app.post('/api/admin/mass-approve-media', authenticate, requireSuperAdmin, async (req, res) => {
   try {
-    const publicImagesPath = path.join(__dirname, '..', 'public', 'images');
-    if (!fs.existsSync(publicImagesPath)) {
-      return res.status(404).json({ error: 'Images folder not found' });
-    }
-    const files = fs.readdirSync(publicImagesPath);
-    const imageFiles = files.filter(file => /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(file));
-    let imported = 0;
-    for (const file of imageFiles) {
-      const url = `/images/${file}`;
-      const exists = await db.pool.query('SELECT id FROM media WHERE url = $1', [url]);
-      if (exists.rows.length > 0) continue;
-      await db.pool.query(
-        'INSERT INTO media (name, type, url, category, uploaded_by, uploaded_at) VALUES ($1, $2, $3, $4, $5, NOW())',
-        [file, 'image', url, 'images', req.user.username]
-      );
-      imported++;
-    }
-    res.json({ success: true, imported, total: imageFiles.length });
+    const result = await db.pool.query(
+      "UPDATE media SET status='approved' WHERE status='pending' AND upload_type='mass' RETURNING id"
+    );
+    res.json({ success: true, approved: result.rows.length });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1252,10 +1641,12 @@ app.delete('/api/media/:id', authenticate, requireMediaManager, async (req, res)
 
 // ============ DOCUMENT REVISIONS ============
 
-app.post('/api/documents/upload', authenticate, upload.single('file'), async (req, res) => {
+app.post('/api/documents/upload', authenticate, writeLimiter, upload.fields([{ name: 'file', maxCount: 1 }, { name: 'cover_image', maxCount: 1 }]), async (req, res) => {
   try {
     const { name, type, category, notes } = req.body;
-    const file = req.file;
+    const file = req.files?.file?.[0];
+    const coverFile = req.files?.cover_image?.[0];
+    const coverImageUrl = coverFile ? `/uploads/${coverFile.filename}` : null;
     if (!file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
@@ -1289,8 +1680,8 @@ app.post('/api/documents/upload', authenticate, upload.single('file'), async (re
 
     const result = await db.pool.query(
       `INSERT INTO document_revisions
-             (name, original_name, type, mime_type, size, url, category, author_id, author_name, status, version, parent_revision_id, notes, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', $10, $11, $12, NOW())
+             (name, original_name, type, mime_type, size, url, category, author_id, author_name, status, version, parent_revision_id, notes, cover_image, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', $10, $11, $12, $13, NOW())
              RETURNING *`,
       [
         name || file.originalname,
@@ -1305,6 +1696,7 @@ app.post('/api/documents/upload', authenticate, upload.single('file'), async (re
         newVersion,
         parentId,
         notes || '',
+        coverImageUrl,
       ]
     );
 
@@ -1341,7 +1733,7 @@ app.get('/api/documents', authenticate, async (req, res) => {
 
     if (status) {
       params.push(status);
-      query += ` AND status = ${params.length}`;
+      query += ` AND status = $${params.length}`;
     }
     if (author_id) {
       params.push(author_id);
@@ -1369,19 +1761,22 @@ app.get('/api/documents/pending', authenticate, requireSuperAdmin, async (req, r
 
 // ============ VIDEO LINKS ============
 
-// Get all video links (Super Admin sees all, SocCom sees only approved)
+// Get all video links (Super Admin sees all, SocCom sees approved + their own pending)
 app.get('/api/video-links', authenticate, async (req, res) => {
   try {
-    let query = 'SELECT * FROM video_links WHERE 1=1';
-    const params = [];
+    let query;
+    let params;
 
-    // SocCom admin only sees approved video links
     if (req.user.role === 'soccom_admin') {
-      params.push('approved');
-      query += ' AND status = $1';
+      // SocCom admin sees approved links AND their own pending/rejected submissions
+      query = "SELECT * FROM video_links WHERE status = 'approved' OR author_id = $1 ORDER BY created_at DESC";
+      params = [req.user.id];
+    } else {
+      // Super admin sees everything
+      query = 'SELECT * FROM video_links ORDER BY created_at DESC';
+      params = [];
     }
 
-    query += ' ORDER BY created_at DESC';
     const result = await db.pool.query(query, params);
     res.json(result.rows);
   } catch (error) {
@@ -1401,22 +1796,47 @@ app.get('/api/video-links/pending', authenticate, requireSuperAdmin, async (req,
   }
 });
 
-// Submit video link for approval (SocCom Admin only)
-app.post('/api/video-links', authenticate, requireSoccomAdmin, async (req, res) => {
-  try {
-    const { url, title, description, thumbnail } = req.body;
+// Allowed video platform hostnames — prevents SSRF via internal URLs
+const VIDEO_ALLOWED_HOSTS = new Set([
+  'www.youtube.com', 'youtube.com', 'youtu.be', 'm.youtube.com',
+  'www.tiktok.com', 'tiktok.com', 'vm.tiktok.com',
+  'www.instagram.com', 'instagram.com',
+  'www.facebook.com', 'facebook.com', 'fb.watch', 'fb.com', 'm.facebook.com',
+  'drive.google.com',
+  'www.snapchat.com', 'snapchat.com',
+  'vimeo.com', 'www.vimeo.com', 'player.vimeo.com',
+  'twitter.com', 'www.twitter.com', 'x.com', 'www.x.com',
+]);
 
-    if (!url || !title) {
-      return res.status(400).json({ error: 'URL and title are required' });
+// Submit video link for approval (SocCom Admin only)
+app.post('/api/video-links', authenticate, requireSoccomAdmin, validate(schemas.videoLinkCreate), async (req, res) => {
+  try {
+    const { url, title, description, thumbnail } = req.validatedBody;
+
+    // Validate URL is from an allowed video platform (prevents SSRF + stored XSS)
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      return res.status(400).json({ error: 'Invalid video URL' });
+    }
+    if (!VIDEO_ALLOWED_HOSTS.has(parsedUrl.hostname)) {
+      return res.status(400).json({
+        error: 'Video URL must be from a supported platform: YouTube, TikTok, Instagram, Facebook, Vimeo, Twitter/X, Google Drive, or Snapchat',
+      });
     }
 
-    // Detect platform from URL
+    // Detect platform using the validated hostname (not string.includes — prevents bypass)
+    const hostname = parsedUrl.hostname;
     let platform = 'other';
-    if (url.includes('youtube.com') || url.includes('youtu.be')) platform = 'youtube';
-    else if (url.includes('tiktok.com')) platform = 'tiktok';
-    else if (url.includes('instagram.com')) platform = 'instagram';
-    else if (url.includes('drive.google.com')) platform = 'google_drive';
-    else if (url.includes('snapchat.com')) platform = 'snapchat';
+    if (hostname.includes('youtube') || hostname === 'youtu.be') platform = 'youtube';
+    else if (hostname.includes('tiktok')) platform = 'tiktok';
+    else if (hostname.includes('instagram')) platform = 'instagram';
+    else if (hostname.includes('facebook') || hostname === 'fb.watch' || hostname === 'fb.com') platform = 'facebook';
+    else if (hostname === 'drive.google.com') platform = 'google_drive';
+    else if (hostname.includes('snapchat')) platform = 'snapchat';
+    else if (hostname.includes('vimeo')) platform = 'vimeo';
+    else if (hostname.includes('twitter') || hostname.includes('x.com')) platform = 'twitter';
 
     const result = await db.pool.query(
       `INSERT INTO video_links (url, title, description, thumbnail, platform, author_id, author_name, status, created_at)
@@ -1519,8 +1939,8 @@ app.post('/api/documents/:id/review', authenticate, requireSuperAdmin, async (re
         else if (doc.type === 'document') category = 'documents';
 
         await db.pool.query(
-          'INSERT INTO media (name, type, url, category, uploaded_by, uploaded_at) VALUES ($1, $2, $3, $4, $5, NOW())',
-          [doc.name, doc.type, doc.url, category, doc.author_name]
+          'INSERT INTO media (name, type, url, category, uploaded_by, cover_image, uploaded_at) VALUES ($1, $2, $3, $4, $5, $6, NOW())',
+          [doc.name, doc.type, doc.url, category, doc.author_name, doc.cover_image || null]
         );
       }
     }
@@ -1551,8 +1971,8 @@ app.post('/api/documents/:id/review', authenticate, requireSuperAdmin, async (re
 app.get('/api/notifications/unread-count', authenticate, async (req, res) => {
   try {
     const result = await db.pool.query(
-      'SELECT COUNT(*) as count FROM notifications WHERE (user_id = $1 OR user_name = $2) AND is_read = false',
-      [req.user.id, req.user.username]
+      'SELECT COUNT(*) as count FROM notifications WHERE user_id = $1 AND is_read = false',
+      [req.user.id]
     );
     res.json({ count: parseInt(result.rows[0].count) });
   } catch (error) {
@@ -1563,8 +1983,8 @@ app.get('/api/notifications/unread-count', authenticate, async (req, res) => {
 app.get('/api/notifications', authenticate, async (req, res) => {
   try {
     const result = await db.pool.query(
-      'SELECT * FROM notifications WHERE user_id = $1 OR user_name = $2 ORDER BY created_at DESC LIMIT 50',
-      [req.user.id, req.user.username]
+      'SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50',
+      [req.user.id]
     );
     res.json(result.rows);
   } catch (error) {
@@ -1574,7 +1994,13 @@ app.get('/api/notifications', authenticate, async (req, res) => {
 
 app.post('/api/notifications/:id/read', authenticate, async (req, res) => {
   try {
-    await db.pool.query('UPDATE notifications SET is_read = true WHERE id = $1', [req.params.id]);
+    const result = await db.pool.query(
+      'UPDATE notifications SET is_read = true WHERE id = $1 AND user_id = $2 RETURNING id',
+      [req.params.id, req.user.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Notification not found' });
+    }
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1584,8 +2010,8 @@ app.post('/api/notifications/:id/read', authenticate, async (req, res) => {
 app.post('/api/notifications/read-all', authenticate, async (req, res) => {
   try {
     await db.pool.query(
-      'UPDATE notifications SET is_read = true WHERE user_id = $1 OR user_name = $2',
-      [req.user.id, req.user.username]
+      'UPDATE notifications SET is_read = true WHERE user_id = $1',
+      [req.user.id]
     );
     res.json({ success: true });
   } catch (error) {
@@ -1595,7 +2021,13 @@ app.post('/api/notifications/read-all', authenticate, async (req, res) => {
 
 app.delete('/api/notifications/:id', authenticate, async (req, res) => {
   try {
-    await db.pool.query('DELETE FROM notifications WHERE id = $1', [req.params.id]);
+    const result = await db.pool.query(
+      'DELETE FROM notifications WHERE id = $1 AND user_id = $2 RETURNING id',
+      [req.params.id, req.user.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Notification not found' });
+    }
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1641,38 +2073,42 @@ app.get('/api/submissions/pending', authenticate, async (req, res) => {
 
 app.post('/api/submissions/:id/approve', authenticate, async (req, res) => {
   const { notes } = req.body;
+  const client = await db.pool.connect();
   try {
-    const subResult = await db.pool.query('SELECT * FROM submissions WHERE id = $1', [
+    await client.query('BEGIN');
+
+    const subResult = await client.query('SELECT * FROM submissions WHERE id = $1', [
       req.params.id,
     ]);
     if (subResult.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Submission not found' });
     }
     const submission = subResult.rows[0];
     const approvalDate = new Date();
 
     if (submission.type === 'page') {
-      await db.pool.query(
+      await client.query(
         "UPDATE pages SET status = 'live', visible = true, approved_by = $1, approved_at = $2 WHERE id = $3",
         [req.user.name, approvalDate, submission.item_id]
       );
     } else if (submission.type === 'post') {
-      await db.pool.query(
+      await client.query(
         "UPDATE posts SET status = 'live', visible = true, approved_by = $1, approved_at = $2 WHERE id = $3",
         [req.user.name, approvalDate, submission.item_id]
       );
     }
 
-    await db.pool.query(
+    await client.query(
       "UPDATE submissions SET status = 'approved', approved_by = $1, approved_at = $2, notes = $3 WHERE id = $4",
       [req.user.name, approvalDate, notes || '', req.params.id]
     );
-    await db.pool.query('INSERT INTO logs (action, user_name, details) VALUES ($1, $2, $3)', [
+    await client.query('INSERT INTO logs (action, user_name, details) VALUES ($1, $2, $3)', [
       'SUBMISSION_APPROVE',
       req.user.username,
       JSON.stringify({ submissionId: req.params.id }),
     ]);
-    await db.pool.query(
+    await client.query(
       `INSERT INTO notifications (user_id, user_name, title, message, type, related_type, related_id)
              VALUES ($1, $2, $3, $4, 'success', 'submission', $5)`,
       [
@@ -1683,44 +2119,53 @@ app.post('/api/submissions/:id/approve', authenticate, async (req, res) => {
         req.params.id,
       ]
     );
+
+    await client.query('COMMIT');
     res.json({ success: true });
   } catch (error) {
+    await client.query('ROLLBACK');
     res.status(500).json({ error: error.message });
+  } finally {
+    client.release();
   }
 });
 
 app.post('/api/submissions/:id/reject', authenticate, async (req, res) => {
   const { notes } = req.body;
+  const client = await db.pool.connect();
   try {
-    const subResult = await db.pool.query('SELECT * FROM submissions WHERE id = $1', [
+    await client.query('BEGIN');
+
+    const subResult = await client.query('SELECT * FROM submissions WHERE id = $1', [
       req.params.id,
     ]);
     if (subResult.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Submission not found' });
     }
     const submission = subResult.rows[0];
     const rejectionDate = new Date();
 
     if (submission.type === 'page') {
-      await db.pool.query("UPDATE pages SET status = 'draft', visible = false WHERE id = $1", [
+      await client.query("UPDATE pages SET status = 'draft', visible = false WHERE id = $1", [
         submission.item_id,
       ]);
     } else if (submission.type === 'post') {
-      await db.pool.query("UPDATE posts SET status = 'draft', visible = false WHERE id = $1", [
+      await client.query("UPDATE posts SET status = 'draft', visible = false WHERE id = $1", [
         submission.item_id,
       ]);
     }
 
-    await db.pool.query(
+    await client.query(
       "UPDATE submissions SET status = 'rejected', rejected_by = $1, rejected_at = $2, rejection_notes = $3 WHERE id = $4",
       [req.user.name, rejectionDate, notes || '', req.params.id]
     );
-    await db.pool.query('INSERT INTO logs (action, user_name, details) VALUES ($1, $2, $3)', [
+    await client.query('INSERT INTO logs (action, user_name, details) VALUES ($1, $2, $3)', [
       'SUBMISSION_REJECT',
       req.user.username,
       JSON.stringify({ submissionId: req.params.id }),
     ]);
-    await db.pool.query(
+    await client.query(
       `INSERT INTO notifications (user_id, user_name, title, message, type, related_type, related_id)
              VALUES ($1, $2, $3, $4, 'error', 'submission', $5)`,
       [
@@ -1731,69 +2176,134 @@ app.post('/api/submissions/:id/reject', authenticate, async (req, res) => {
         req.params.id,
       ]
     );
+
+    await client.query('COMMIT');
     res.json({ success: true });
   } catch (error) {
+    await client.query('ROLLBACK');
     res.status(500).json({ error: error.message });
+  } finally {
+    client.release();
   }
 });
 
 app.post('/api/submissions/:id/resubmit', authenticate, async (req, res) => {
+  const client = await db.pool.connect();
   try {
-    const subResult = await db.pool.query('SELECT * FROM submissions WHERE id = $1', [
+    await client.query('BEGIN');
+
+    const subResult = await client.query('SELECT * FROM submissions WHERE id = $1', [
       req.params.id,
     ]);
     if (subResult.rows.length === 0) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Submission not found' });
     }
     const submission = subResult.rows[0];
 
     if (submission.status !== 'rejected') {
+      await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Only rejected submissions can be resubmitted' });
     }
     if (submission.author_id !== req.user.id) {
+      await client.query('ROLLBACK');
       return res.status(403).json({ error: 'Only the original author can resubmit' });
     }
 
-    await db.pool.query(
+    await client.query(
       "UPDATE submissions SET status = 'pending', submitted_at = CURRENT_TIMESTAMP, rejected_by = NULL, rejected_at = NULL, rejection_notes = NULL WHERE id = $1",
       [req.params.id]
     );
 
     if (submission.type === 'page') {
-      await db.pool.query("UPDATE pages SET status = 'pending', visible = false WHERE id = $1", [
+      await client.query("UPDATE pages SET status = 'pending', visible = false WHERE id = $1", [
         submission.item_id,
       ]);
     } else if (submission.type === 'post') {
-      await db.pool.query("UPDATE posts SET status = 'pending', visible = false WHERE id = $1", [
+      await client.query("UPDATE posts SET status = 'pending', visible = false WHERE id = $1", [
         submission.item_id,
       ]);
     }
 
-    const superAdmins = await db.pool.query(
+    const superAdmins = await client.query(
       "SELECT id, name FROM users WHERE role = 'super_admin'"
     );
-    for (const admin of superAdmins.rows) {
-      await db.pool.query(
-        `INSERT INTO notifications (user_id, user_name, title, message, type, related_type, related_id)
-                 VALUES ($1, $2, $3, $4, 'submission', 'submission', $5)`,
-        [
-          admin.id,
-          admin.name,
-          'Submission Resubmitted',
-          `${req.user.name} resubmitted "${submission.title}" for review`,
-          req.params.id,
-        ]
+    if (superAdmins.rows.length > 0) {
+      const notifValues = superAdmins.rows
+        .map((_, i) => {
+          const base = i * 5;
+          return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, 'submission', 'submission', $${base + 5})`;
+        })
+        .join(', ');
+      const notifParams = superAdmins.rows.flatMap(admin => [
+        admin.id,
+        admin.name,
+        'Submission Resubmitted',
+        `${req.user.name} resubmitted "${submission.title}" for review`,
+        req.params.id,
+      ]);
+      await client.query(
+        `INSERT INTO notifications (user_id, user_name, title, message, type, related_type, related_id) VALUES ${notifValues}`,
+        notifParams
       );
     }
 
-    await db.pool.query('INSERT INTO logs (action, user_name, details) VALUES ($1, $2, $3)', [
+    await client.query('INSERT INTO logs (action, user_name, details) VALUES ($1, $2, $3)', [
       'SUBMISSION_RESUBMIT',
       req.user.username,
       JSON.stringify({ submissionId: req.params.id }),
     ]);
+
+    await client.query('COMMIT');
     res.json({ success: true });
   } catch (error) {
+    await client.query('ROLLBACK');
     res.status(500).json({ error: error.message });
+  } finally {
+    client.release();
+  }
+});
+
+// POST /api/submissions/:id/whitelist - Super Admin holds content (acknowledged but not published)
+app.post('/api/submissions/:id/whitelist', authenticate, requireSuperAdminOnly, async (req, res) => {
+  const { notes } = req.body;
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const subResult = await client.query('SELECT * FROM submissions WHERE id = $1', [req.params.id]);
+    if (subResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Submission not found' });
+    }
+    const submission = subResult.rows[0];
+
+    await client.query(
+      "UPDATE submissions SET status = 'whitelisted', approved_by = $1, approved_at = $2, notes = $3 WHERE id = $4",
+      [req.user.name, new Date(), notes || '', req.params.id]
+    );
+    await client.query('INSERT INTO logs (action, user_name, details) VALUES ($1, $2, $3)', [
+      'SUBMISSION_WHITELIST',
+      req.user.username,
+      JSON.stringify({ submissionId: req.params.id, notes }),
+    ]);
+    await client.query(
+      `INSERT INTO notifications (user_id, user_name, title, message, type, related_type, related_id)
+       VALUES ($1, $2, $3, $4, 'warning', 'submission', $5)`,
+      [
+        submission.author_id,
+        submission.author_name,
+        'Submission On Hold',
+        `Your ${submission.type} "${submission.title}" has been reviewed and is on hold. ${notes ? 'Note: ' + notes : 'The reviewer may publish it at a later date.'}`,
+        req.params.id,
+      ]
+    );
+    await client.query('COMMIT');
+    res.json({ success: true });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: error.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -1891,15 +2401,100 @@ app.post('/api/tasks', authenticate, async (req, res) => {
 });
 
 app.put('/api/tasks/:id', authenticate, async (req, res) => {
-  const { title, description, priority, dueDate, status } = req.body;
   try {
-    const result = await db.pool.query(
-      'UPDATE tasks SET title = $1, description = $2, priority = $3, due_date = $4, status = $5, updated_at = CURRENT_TIMESTAMP WHERE id = $6 RETURNING *',
-      [title, description, priority, dueDate, status, req.params.id]
-    );
-    if (result.rows.length === 0) {
+    const existing = await db.pool.query('SELECT * FROM tasks WHERE id = $1', [req.params.id]);
+    if (existing.rows.length === 0) {
       return res.status(404).json({ error: 'Task not found' });
     }
+    const oldTask = existing.rows[0];
+
+    // Merge: only override fields that were explicitly provided in the request
+    const title = req.body.title !== undefined ? req.body.title : oldTask.title;
+    const description = req.body.description !== undefined ? req.body.description : oldTask.description;
+    const priority = req.body.priority !== undefined ? req.body.priority : oldTask.priority;
+    const dueDate = req.body.dueDate !== undefined ? req.body.dueDate : oldTask.due_date;
+    const status = req.body.status !== undefined ? req.body.status : oldTask.status;
+    const rejectionReason = req.body.rejectionReason !== undefined ? req.body.rejectionReason : oldTask.rejection_reason;
+    const assigneeId = req.body.assigneeId !== undefined ? req.body.assigneeId : oldTask.assignee_id;
+    const assigneeName = req.body.assigneeName !== undefined ? req.body.assigneeName : oldTask.assignee_name;
+
+    // Set rejection metadata when status is 'rejected'
+    const isNowRejected = status === 'rejected' && oldTask.status !== 'rejected';
+    const rejectedBy = isNowRejected ? req.user.name : (status !== 'rejected' ? null : oldTask.rejected_by);
+    const rejectedAt = isNowRejected ? new Date() : (status !== 'rejected' ? null : oldTask.rejected_at);
+
+    // When reassigning, clear rejection fields and reset status to pending
+    const isReassign = req.body.assigneeId !== undefined && req.body.assigneeId !== oldTask.assignee_id;
+    const finalStatus = isReassign ? 'pending' : status;
+    const finalRejectReason = isReassign ? null : (finalStatus === 'rejected' ? rejectionReason : null);
+    const finalRejectedBy = isReassign ? null : rejectedBy;
+    const finalRejectedAt = isReassign ? null : rejectedAt;
+
+    const result = await db.pool.query(
+      `UPDATE tasks
+         SET title = $1, description = $2, priority = $3, due_date = $4,
+             status = $5, rejection_reason = $6, rejected_by = $7, rejected_at = $8,
+             assignee_id = $9, assignee_name = $10,
+             updated_at = CURRENT_TIMESTAMP
+       WHERE id = $11 RETURNING *`,
+      [title, description, priority, dueDate, finalStatus,
+        finalRejectReason, finalRejectedBy, finalRejectedAt,
+        assigneeId, assigneeName, req.params.id]
+    );
+
+    // ── Notifications ──
+    const statusChanged = finalStatus !== oldTask.status;
+    const assigneeChanged = isReassign;
+
+    // Notify new assignee on reassignment
+    if (assigneeChanged && assigneeId) {
+      await db.pool.query(
+        `INSERT INTO notifications (user_id, user_name, title, message, type, related_type, related_id)
+         VALUES ($1, $2, $3, $4, 'task', 'task', $5)`,
+        [assigneeId, assigneeName,
+          'Task Assigned to You',
+          `${req.user.name} has reassigned the task "${title}" to you.`,
+          req.params.id]
+      );
+    }
+
+    if (statusChanged && !assigneeChanged) {
+      const notifyLabels = {
+        completed: 'completed',
+        in_progress: 'started working on',
+        implemented: 'marked as implemented',
+        pending: 'reset to pending',
+        rejected: 'rejected',
+      };
+      const statusLabel = notifyLabels[finalStatus] || finalStatus;
+
+      // Notify task creator
+      if (oldTask.created_by && oldTask.created_by !== req.user.id) {
+        const msg = finalStatus === 'rejected'
+          ? `${req.user.name} rejected "${title}"${rejectionReason ? `: "${rejectionReason}"` : '.'}`
+          : `${req.user.name} has ${statusLabel} the task: "${title}"`;
+        await db.pool.query(
+          `INSERT INTO notifications (user_id, user_name, title, message, type, related_type, related_id)
+           VALUES ($1, $2, $3, $4, 'task', 'task', $5)`,
+          [oldTask.created_by, oldTask.created_by_name,
+          finalStatus === 'rejected' ? 'Task Rejected' : 'Task Status Updated',
+            msg, req.params.id]
+        );
+      }
+
+      // Notify the assignee if a third party changed the status
+      if (oldTask.assignee_id && oldTask.assignee_id !== req.user.id && oldTask.assignee_id !== oldTask.created_by) {
+        await db.pool.query(
+          `INSERT INTO notifications (user_id, user_name, title, message, type, related_type, related_id)
+           VALUES ($1, $2, $3, $4, 'task', 'task', $5)`,
+          [oldTask.assignee_id, oldTask.assignee_name,
+            'Task Updated',
+          `The task "${title}" was ${statusLabel} by ${req.user.name}.`,
+          req.params.id]
+        );
+      }
+    }
+
     res.json(result.rows[0]);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1933,7 +2528,7 @@ app.post('/api/logs/frontend', async (req, res) => {
   res.json({ success: true });
 });
 
-app.get('/api/logs/screen-analysis', async (req, res) => {
+app.get('/api/logs/screen-analysis', authenticate, requireSuperAdmin, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 50;
     const result = await db.pool.query(
@@ -1947,10 +2542,19 @@ app.get('/api/logs/screen-analysis', async (req, res) => {
   }
 });
 
-app.get('/api/logs/frontend', async (req, res) => {
+const ALLOWED_LOG_ACTIONS = new Set([
+  'SCREEN_ANALYSIS', 'PAGE_VIEW', 'USER_ACTION', 'CLICK', 'BUTTON_CLICK', 'LINK_CLICK',
+]);
+
+app.get('/api/logs/frontend', authenticate, requireSuperAdmin, async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 100;
+    const limit = Math.min(500, Math.max(1, parseInt(req.query.limit, 10) || 100));
     const type = req.query.type;
+
+    if (type && !ALLOWED_LOG_ACTIONS.has(type)) {
+      return res.status(400).json({ error: 'Invalid log type filter' });
+    }
+
     const params = [limit];
     let query = `SELECT * FROM logs WHERE action IN ('SCREEN_ANALYSIS', 'PAGE_VIEW', 'USER_ACTION', 'CLICK', 'BUTTON_CLICK', 'LINK_CLICK')`;
 
@@ -1964,7 +2568,7 @@ app.get('/api/logs/frontend', async (req, res) => {
     res.json(result.rows);
   } catch (error) {
     logger.error('Failed to get frontend logs:', error.message);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Failed to retrieve logs' });
   }
 });
 
@@ -1978,17 +2582,35 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-app.post('/send-email', (req, res) => {
+app.post('/send-email', emailLimiter, (req, res) => {
   const { name, email, message } = req.body;
+
+  // Validate required fields
+  if (!name || typeof name !== 'string' || name.trim().length < 1 || name.trim().length > 100) {
+    return res.status(400).json({ success: false, message: 'A valid name is required (max 100 chars)' });
+  }
+  if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+    return res.status(400).json({ success: false, message: 'A valid email address is required' });
+  }
+  if (!message || typeof message !== 'string' || message.trim().length < 1 || message.trim().length > 2000) {
+    return res.status(400).json({ success: false, message: 'A message is required (max 2000 chars)' });
+  }
+
+  const safeName = name.trim().replace(/[\r\n]/g, ' ');
+  const safeEmail = email.trim().replace(/[\r\n]/g, '');
+  const safeMessage = message.trim();
+
   const mailOptions = {
-    from: email,
+    from: process.env.EMAIL,
     to: process.env.RECEIVER_EMAIL,
-    subject: `New Message from ${name}`,
-    text: `Name: ${name}\nEmail: ${email}\nMessage: ${message}`,
+    replyTo: safeEmail,
+    subject: `New Message from ${safeName}`,
+    text: `Name: ${safeName}\nEmail: ${safeEmail}\nMessage:\n${safeMessage}`,
   };
-  transporter.sendMail(mailOptions, (error, info) => {
+
+  transporter.sendMail(mailOptions, (error) => {
     if (error) {
-      console.error('Error sending email:', error);
+      logger.error('Error sending email:', error);
       return res.status(500).json({ success: false, message: 'Error sending email' });
     }
     res.status(200).json({ success: true, message: 'Email sent successfully' });
@@ -2019,7 +2641,7 @@ app.use((err, req, res, next) => {
     return res.status(400).json({ error: err.message });
   }
   if (err.code === 'LIMIT_FILE_SIZE') {
-    return res.status(400).json({ error: 'File too large. Maximum size is 50MB' });
+    return res.status(400).json({ error: 'File too large. Maximum size is 25MB' });
   }
   logger.error('UNHANDLED_ERROR', err.message, { stack: err.stack });
   res.status(500).json({ error: 'Internal server error' });
@@ -2055,4 +2677,8 @@ const startServer = async () => {
   }
 };
 
-startServer();
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = { app };

@@ -30,15 +30,15 @@ const AdminLogin = () => {
 
   const triggerCrucifix = () => {
     setPhase('cracking');
-    setTimeout(() => setPhase('opening'), 600);
-    setTimeout(() => setPhase('blazing'), 1500);
-    setTimeout(() => navigate('/admin/dashboard'), 2400);
+    setTimeout(() => setPhase('opening'), 1100);   // crack visible for 1.1s
+    setTimeout(() => setPhase('blazing'), 2600);   // panels drift for 1.5s before blaze
+    setTimeout(() => navigate('/admin/dashboard'), 4200); // blaze fills for 1.6s then navigate
   };
 
   const triggerLogout = () => {
     setPhase('closing');
-    setTimeout(() => setPhase('reforming'), 2500);
-    setTimeout(() => setPhase('idle'), 5800);
+    setTimeout(() => setPhase('reforming'), 4000);
+    setTimeout(() => setPhase('idle'), 9500);
   };
 
   const handleSubmit = async e => {
@@ -48,8 +48,7 @@ const AdminLogin = () => {
     const result = await login(username, password);
     setLoading(false);
     if (result.success) {
-      // Direct navigation - no animation
-      navigate('/admin/dashboard');
+      triggerCrucifix();
     } else {
       setError(result.error || 'Login failed');
     }
@@ -71,7 +70,7 @@ const AdminLogin = () => {
           font-family: 'Inter', sans-serif;
           background: #06080f;
           position: relative; overflow: hidden;
-          transition: background 1s ease;
+          transition: background 1.6s ease;
         }
         .al-root.phase-blazing { background: #d6eaff; }
 
@@ -88,37 +87,37 @@ const AdminLogin = () => {
             linear-gradient(90deg, rgba(168,204,232,0.025) 1px, transparent 1px);
           background-size: 48px 48px;
           pointer-events: none; z-index: 0;
-          transition: opacity 0.6s ease;
+          transition: opacity 1s ease;
         }
         .al-grid.phase-blazing { opacity: 0; }
 
         .al-torch {
           position: fixed; inset: 0;
           pointer-events: none; z-index: 0;
-          transition: opacity 0.5s ease;
+          transition: opacity 0.8s ease;
         }
         .al-torch.phase-cracking,
         .al-torch.phase-opening,
         .al-torch.phase-blazing { opacity: 0; }
 
-        /* Smoldering embers on the dark backdrop as the card opens */
+        /* Smoldering embers as the card opens */
         .al-smolder {
           position: fixed; inset: 0;
           pointer-events: none; z-index: 2; opacity: 0;
         }
-        .al-smolder.phase-opening { animation: smolderAnim 1.4s ease forwards; }
+        .al-smolder.phase-opening { animation: smolderAnim 2.2s ease forwards; }
         .al-smolder.phase-blazing { opacity: 0; }
 
         @keyframes smolderAnim {
           0%   { opacity: 0; background: transparent; }
-          25%  {
+          20%  {
             opacity: 1;
             background:
               radial-gradient(ellipse 18% 10% at 8%  88%, rgba(255,110,10,0.22) 0%, transparent 100%),
               radial-gradient(ellipse 10% 14% at 92% 78%, rgba(255,70,5,0.18)   0%, transparent 100%),
               radial-gradient(ellipse 14% 8%  at 55% 95%, rgba(255,140,20,0.16) 0%, transparent 100%);
           }
-          55%  {
+          50%  {
             opacity: 1;
             background:
               radial-gradient(ellipse 28% 18% at 5%  90%, rgba(255,150,30,0.28) 0%, transparent 100%),
@@ -127,8 +126,8 @@ const AdminLogin = () => {
               radial-gradient(ellipse 12% 18% at 3%  42%, rgba(200,70,5,0.14)   0%, transparent 100%),
               radial-gradient(ellipse 8%  12% at 97% 30%, rgba(220,100,15,0.12) 0%, transparent 100%);
           }
-          85%  { opacity: 0.4; background: transparent; }
-          100% { opacity: 0;   background: transparent; }
+          80%  { opacity: 0.35; background: transparent; }
+          100% { opacity: 0;    background: transparent; }
         }
 
         /* Final white-blue blaze that sweeps the whole screen */
@@ -143,12 +142,13 @@ const AdminLogin = () => {
             transparent            75%
           );
         }
-        .al-blaze.phase-blazing { animation: blazeExpand 0.9s cubic-bezier(0.2,0,0.4,1) forwards; }
+        .al-blaze.phase-blazing { animation: blazeExpand 1.6s cubic-bezier(0.16,0,0.3,1) forwards; }
 
         @keyframes blazeExpand {
-          0%   { opacity: 0; transform: scale(0.3); }
-          35%  { opacity: 1; }
-          100% { opacity: 1; transform: scale(3); }
+          0%   { opacity: 0;   transform: scale(0.2); }
+          20%  { opacity: 0.7; transform: scale(0.6); }
+          55%  { opacity: 1;   transform: scale(1.6); }
+          100% { opacity: 1;   transform: scale(3.2); }
         }
 
         /* ── Logout: Blur corners to center ── */
@@ -156,69 +156,62 @@ const AdminLogin = () => {
           position: fixed; inset: 0; z-index: 50;
           pointer-events: none; opacity: 0;
         }
-        .al-closer.phase-closing { animation: cornerBlur 2.5s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
-        .al-closer.phase-reforming { animation: cornerUnblur 3s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+        .al-closer.phase-closing   { animation: cornerBlur   4s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+        .al-closer.phase-reforming { animation: cornerUnblur 4.5s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
 
         @keyframes cornerBlur {
           0%   { opacity: 0; }
-          15%  { opacity: 1; }
+          12%  { opacity: 1; }
           100% { opacity: 1; background: radial-gradient(circle at 50% 50%, transparent 0%, rgba(6,8,15,0.85) 30%, rgba(6,8,15,1) 60%); }
         }
 
         @keyframes cornerUnblur {
           0%   { opacity: 1; background: radial-gradient(circle at 50% 50%, transparent 0%, rgba(6,8,15,0.85) 30%, rgba(6,8,15,1) 60%); }
-          50%  { opacity: 1; }
+          55%  { opacity: 1; }
           100% { opacity: 0; }
         }
 
         /* ── Reform panels from center ── */
-        .al-panel.phase-reforming {
-          opacity: 0;
-          transition: opacity 0.6s ease;
-          animation: reformPanel 2.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-          animation-delay: 0.4s;
-        }
-        .al-panel.phase-reforming { opacity: 1; }
-
         @keyframes reformTL {
           0%   { transform: translate(-240%,-220%) rotate(-18deg); opacity: 0; }
-          40%  { opacity: 1; }
+          30%  { opacity: 1; }
           100% { transform: translate(0,0) rotate(0deg); opacity: 1; }
         }
         @keyframes reformTR {
           0%   { transform: translate(240%,-220%) rotate(18deg); opacity: 0; }
-          40%  { opacity: 1; }
+          30%  { opacity: 1; }
           100% { transform: translate(0,0) rotate(0deg); opacity: 1; }
         }
         @keyframes reformBL {
           0%   { transform: translate(-240%,220%) rotate(18deg); opacity: 0; }
-          40%  { opacity: 1; }
+          30%  { opacity: 1; }
           100% { transform: translate(0,0) rotate(0deg); opacity: 1; }
         }
         @keyframes reformBR {
           0%   { transform: translate(240%,220%) rotate(-18deg); opacity: 0; }
-          40%  { opacity: 1; }
+          30%  { opacity: 1; }
           100% { transform: translate(0,0) rotate(0deg); opacity: 1; }
         }
 
-        .al-card.phase-closing { opacity: 0; pointer-events: none; transition: opacity 1s ease; }
-        .al-card.phase-reforming { opacity: 1; pointer-events: auto; animation: cardReform 1.8s ease forwards; animation-delay: 1.5s; }
+        .al-card.phase-closing   { opacity: 0; pointer-events: none; transition: opacity 1.4s ease; }
+        .al-card.phase-reforming { opacity: 1; pointer-events: auto; animation: cardReform 2.4s cubic-bezier(0.22,1,0.36,1) forwards; animation-delay: 2.2s; opacity: 0; }
 
         @keyframes cardReform {
-          0%   { opacity: 0; transform: scale(0.85); }
-          100% { opacity: 1; transform: scale(1); }
+          0%   { opacity: 0; transform: scale(0.82) translateY(12px); }
+          50%  { opacity: 0.6; }
+          100% { opacity: 1;  transform: scale(1) translateY(0); }
         }
 
         /* Cross light for reform */
-        .al-cross-light.phase-reforming { animation: crossReform 2.2s ease forwards; animation-delay: 0.4s; }
+        .al-cross-light.phase-reforming { animation: crossReform 3s ease forwards; animation-delay: 0.6s; }
 
         @keyframes crossReform {
           0%   { opacity: 1; transform: scale(2.2); }
-          60%  { opacity: 1; }
+          65%  { opacity: 1; }
           100% { opacity: 0; transform: scale(0.2); }
         }
 
-        /* Card wrapper — panels sit absolute inside this */
+        /* Card wrapper */
         .al-card-wrapper {
           position: relative; z-index: 5;
           width: 100%; max-width: 400px;
@@ -235,7 +228,7 @@ const AdminLogin = () => {
             0 0 50px 18px  rgba(100,170,240,0.30),
             0 0 100px 40px rgba(70,140,220,0.15),
             0 32px 80px    rgba(0,0,0,0.7);
-          transition: opacity 0.15s ease, box-shadow 0.4s ease;
+          transition: opacity 0.2s ease, box-shadow 0.6s ease;
         }
 
         /* Warm gold halo when the crack is forming */
@@ -248,9 +241,9 @@ const AdminLogin = () => {
             0 32px 80px rgba(0,0,0,0.7);
         }
         .al-card.phase-opening,
-        .al-card.phase-blazing { opacity: 0; pointer-events: none; }
+        .al-card.phase-blazing { opacity: 0; pointer-events: none; transition: opacity 0.5s ease 0.3s; }
 
-        /* Gold cross seam — appears as the card begins to crack */
+        /* Gold cross seam */
         .al-crack {
           position: absolute; inset: 0; z-index: 10;
           pointer-events: none; opacity: 0;
@@ -270,10 +263,11 @@ const AdminLogin = () => {
               transparent            calc(50% + 1.5px)
             );
         }
-        .al-crack.phase-cracking { animation: crackAppear 0.45s ease forwards; }
+        .al-crack.phase-cracking { animation: crackAppear 0.9s ease forwards; }
 
         @keyframes crackAppear {
           0%   { opacity: 0; }
+          40%  { opacity: 0.4; }
           100% { opacity: 1; }
         }
 
@@ -284,8 +278,8 @@ const AdminLogin = () => {
           background: rgba(18,32,60,0.97);
           z-index: 20; pointer-events: none; opacity: 0;
         }
-        .al-panel.phase-opening { opacity: 1; }
-        .al-panel.phase-blazing { opacity: 0; transition: opacity 0.3s ease; }
+        .al-panel.phase-opening   { opacity: 1; }
+        .al-panel.phase-blazing   { opacity: 0; transition: opacity 0.5s ease; }
         .al-panel.phase-reforming { opacity: 1; animation: none; }
 
         .al-panel-tl {
@@ -313,35 +307,36 @@ const AdminLogin = () => {
           transform-origin: left top;
         }
 
-        .al-panel-tl.phase-opening { animation: flyTL 1s cubic-bezier(0.22,1,0.36,1) forwards; }
-        .al-panel-tr.phase-opening { animation: flyTR 1s cubic-bezier(0.22,1,0.36,1) forwards; }
-        .al-panel-bl.phase-opening { animation: flyBL 1s cubic-bezier(0.22,1,0.36,1) forwards; }
-        .al-panel-br.phase-opening { animation: flyBR 1s cubic-bezier(0.22,1,0.36,1) forwards; }
+        /* Login: panels drift out slowly */
+        .al-panel-tl.phase-opening { animation: flyTL 1.6s cubic-bezier(0.16,1,0.3,1) forwards; }
+        .al-panel-tr.phase-opening { animation: flyTR 1.6s cubic-bezier(0.16,1,0.3,1) forwards; }
+        .al-panel-bl.phase-opening { animation: flyBL 1.6s cubic-bezier(0.16,1,0.3,1) forwards; }
+        .al-panel-br.phase-opening { animation: flyBR 1.6s cubic-bezier(0.16,1,0.3,1) forwards; }
 
-        /* Reform animations for logout */
-        .al-panel-tl.phase-reforming { animation: reformTL 2.8s cubic-bezier(0.22,1,0.36,1) forwards; animation-delay: 0.4s; }
-        .al-panel-tr.phase-reforming { animation: reformTR 2.8s cubic-bezier(0.22,1,0.36,1) forwards; animation-delay: 0.4s; }
-        .al-panel-bl.phase-reforming { animation: reformBL 2.8s cubic-bezier(0.22,1,0.36,1) forwards; animation-delay: 0.4s; }
-        .al-panel-br.phase-reforming { animation: reformBR 2.8s cubic-bezier(0.22,1,0.36,1) forwards; animation-delay: 0.4s; }
+        /* Logout: panels drift back in slowly */
+        .al-panel-tl.phase-reforming { animation: reformTL 3.6s cubic-bezier(0.16,1,0.3,1) forwards; animation-delay: 0.5s; }
+        .al-panel-tr.phase-reforming { animation: reformTR 3.6s cubic-bezier(0.16,1,0.3,1) forwards; animation-delay: 0.5s; }
+        .al-panel-bl.phase-reforming { animation: reformBL 3.6s cubic-bezier(0.16,1,0.3,1) forwards; animation-delay: 0.5s; }
+        .al-panel-br.phase-reforming { animation: reformBR 3.6s cubic-bezier(0.16,1,0.3,1) forwards; animation-delay: 0.5s; }
 
         @keyframes flyTL {
-          0%   { transform: translate(0,0)         rotate(0deg);  opacity: 1; }
-          15%  { opacity: 1; }
+          0%   { transform: translate(0,0)         rotate(0deg);   opacity: 1; }
+          10%  { opacity: 1; }
           100% { transform: translate(-240%,-220%) rotate(-18deg); opacity: 0; }
         }
         @keyframes flyTR {
           0%   { transform: translate(0,0)        rotate(0deg);  opacity: 1; }
-          15%  { opacity: 1; }
-          100% { transform: translate(240%,-220%) rotate(18deg);  opacity: 0; }
+          10%  { opacity: 1; }
+          100% { transform: translate(240%,-220%) rotate(18deg); opacity: 0; }
         }
         @keyframes flyBL {
-          0%   { transform: translate(0,0)        rotate(0deg);  opacity: 1; }
-          15%  { opacity: 1; }
-          100% { transform: translate(-240%,220%) rotate(18deg);  opacity: 0; }
+          0%   { transform: translate(0,0)        rotate(0deg); opacity: 1; }
+          10%  { opacity: 1; }
+          100% { transform: translate(-240%,220%) rotate(18deg); opacity: 0; }
         }
         @keyframes flyBR {
-          0%   { transform: translate(0,0)       rotate(0deg);  opacity: 1; }
-          15%  { opacity: 1; }
+          0%   { transform: translate(0,0)       rotate(0deg);   opacity: 1; }
+          10%  { opacity: 1; }
           100% { transform: translate(240%,220%) rotate(-18deg); opacity: 0; }
         }
 
@@ -357,12 +352,13 @@ const AdminLogin = () => {
             transparent            68%
           );
         }
-        .al-cross-light.phase-opening { animation: crossBlaze 1s ease forwards; }
+        .al-cross-light.phase-opening { animation: crossBlaze 1.6s ease forwards; }
 
         @keyframes crossBlaze {
-          0%   { opacity: 0; transform: scale(0.2); }
-          25%  { opacity: 1; }
-          100% { opacity: 1; transform: scale(2.2); }
+          0%   { opacity: 0; transform: scale(0.1); }
+          18%  { opacity: 0.6; }
+          55%  { opacity: 1;   transform: scale(1.4); }
+          100% { opacity: 1;   transform: scale(2.4); }
         }
 
         /* ── Card interior ── */
@@ -395,7 +391,7 @@ const AdminLogin = () => {
         .al-field { margin-bottom: 18px; }
         .al-label {
           display: block; font-size: 11px; font-weight: 600; letter-spacing: 0.1em;
-          text-transform: uppercase; color: #000000; margin-bottom: 8px;
+          text-transform: uppercase; color: rgba(255,255,255,0.75); margin-bottom: 8px;
         }
         .al-input {
           width: 100%; background: rgba(168,204,232,0.05); border: 1px solid rgba(168,204,232,0.12);
@@ -433,7 +429,7 @@ const AdminLogin = () => {
         }
         .al-back:hover { color: rgba(168,204,232,0.7); }
         .al-footer { padding: 14px 36px 20px; text-align: center; border-top: 1px solid rgba(168,204,232,0.06); }
-        .al-footer-text { font-size: 10.5px; color: #000000; font-weight: 600; letter-spacing: 0.06em; font-family: 'Cinzel', serif; }
+        .al-footer-text { font-size: 10.5px; color: rgba(255,255,255,0.5); font-weight: 600; letter-spacing: 0.06em; font-family: 'Cinzel', serif; }
       `}</style>
 
       <div className={`al-root phase-${phase}`} onMouseMove={handleMouseMove}>
@@ -521,7 +517,7 @@ const AdminLogin = () => {
               </form>
 
               {!animating && (
-                <a href="http://localhost:3000/HolyName" className="al-back">
+                <a href="/" className="al-back">
                   ← Back to Website
                 </a>
               )}
@@ -534,6 +530,17 @@ const AdminLogin = () => {
 
           {/* 4 crucifix panels + cross light — only mounted during animation */}
           {animating && (
+            <>
+              <div className={`al-cross-light phase-${phase}`} />
+              <div className={`al-panel al-panel-tl phase-${phase}`} />
+              <div className={`al-panel al-panel-tr phase-${phase}`} />
+              <div className={`al-panel al-panel-bl phase-${phase}`} />
+              <div className={`al-panel al-panel-br phase-${phase}`} />
+            </>
+          )}
+
+          {/* Reform panels shown during logout */}
+          {isLoggingOut && (
             <>
               <div className={`al-cross-light phase-${phase}`} />
               <div className={`al-panel al-panel-tl phase-${phase}`} />

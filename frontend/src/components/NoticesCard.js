@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { postsAPI } from '../services/api';
 
@@ -19,7 +19,6 @@ const isSoon = d => {
 export default function NoticesCard() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const scrollRef = useRef(null);
 
   useEffect(() => {
     postsAPI
@@ -32,173 +31,169 @@ export default function NoticesCard() {
   const bulletins = items.filter(p => p.is_bulletin || p.is_pinned);
   const events = items.filter(p => !p.is_bulletin && !p.is_pinned);
 
-  return (
-    <div
-      style={{
-        background: '#fff',
-        borderRadius: 16,
-        overflow: 'hidden',
-        boxShadow: '0 4px 24px rgba(27,58,107,0.08)',
-        border: '1px solid rgba(27,58,107,0.08)',
-        minHeight: 420,
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
-      {/* Header */}
-      <div style={{
-        padding: '20px 24px',
-        background: 'linear-gradient(135deg, #0f1923 0%, #1B3A6B 100%)',
-        borderBottom: '3px solid #C9A84C'
-      }}>
-        <h3 style={{
-          fontFamily: "'Cinzel', serif",
-          color: '#fff',
-          fontSize: 15,
-          fontWeight: 600,
-          margin: 0,
-          letterSpacing: '0.04em'
-        }}>
-          Parish Notices & Events
-        </h3>
-        <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, margin: '4px 0 0' }}>
-          Bulletins, Upcoming Events, Announcements
-        </p>
+  if (loading) {
+    return (
+      <div style={{ textAlign: 'center', padding: '40px 0', color: '#9ca3af', fontSize: 14 }}>
+        Loading notices…
       </div>
+    );
+  }
 
-      {loading ? (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{
-              width: 16, height: 16, border: '2px solid #e5e7eb', borderTopColor: '#1B3A6B',
-              borderRadius: '50%', animation: 'spin 1s linear infinite'
-            }} />
-            Loading notices...
+  if (items.length === 0) {
+    return (
+      <div style={{ textAlign: 'center', padding: '40px 0', color: '#9ca3af', fontSize: 14 }}>
+        No notices at this time.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: bulletins.length > 0 && events.length > 0 ? '1fr 1fr' : '1fr',
+      gap: 40,
+    }}
+      className="notices-grid"
+    >
+      <style>{`
+        @media (max-width: 768px) { .notices-grid { grid-template-columns: 1fr !important; } }
+      `}</style>
+
+      {/* ── Bulletins column ── */}
+      {bulletins.length > 0 && (
+        <div>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20,
+          }}>
+            <div style={{ width: 4, height: 22, background: '#C9A84C', borderRadius: 2, flexShrink: 0 }} />
+            <span style={{
+              fontFamily: "'Cinzel', serif", fontSize: 13, fontWeight: 600,
+              color: '#1B3A6B', letterSpacing: '0.08em', textTransform: 'uppercase',
+            }}>
+              Bulletins
+            </span>
           </div>
-          <style>{`@keyframes spin { to { transform: rotate(360deg); }}`}</style>
-        </div>
-      ) : items.length === 0 ? (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: 13 }}>
-          No notices at this time.
-        </div>
-      ) : (
-        <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '12px 0' }}>
-          {/* Pinned Bulletins */}
-          {bulletins.map(item => (
-            <Link key={item.id} to={`/posts/${item.id}`} style={{ display: 'block', textDecoration: 'none' }}>
-              <div
-                style={{
-                  margin: '8px 16px',
-                  background: 'rgba(201,168,76,0.06)',
-                  border: '1px solid rgba(201,168,76,0.2)',
-                  borderLeft: '4px solid #C9A84C',
-                  borderRadius: 12,
-                  padding: '14px 18px',
-                  transition: 'all 0.2s ease',
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {bulletins.map(item => (
+              <Link key={item.id} to={`/posts/${item.id}`} style={{ textDecoration: 'none' }}>
+                <div style={{
+                  borderBottom: '1px solid rgba(27,58,107,0.08)',
+                  paddingBottom: 14,
+                  transition: 'opacity 0.15s',
                 }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.background = 'rgba(201,168,76,0.1)';
-                  e.currentTarget.style.transform = 'translateX(4px)';
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.background = 'rgba(201,168,76,0.06)';
-                  e.currentTarget.style.transform = 'translateX(0)';
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  onMouseEnter={e => e.currentTarget.style.opacity = '0.75'}
+                  onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+                >
                   {item.is_pinned && (
-                    <span style={{ fontSize: 10, color: '#C9A84C', fontWeight: 600, letterSpacing: '0.05em' }}>PINNED</span>
-                  )}
-                  <span style={{
-                    background: '#C9A84C', color: '#0f1923', fontSize: 9, fontWeight: 700,
-                    letterSpacing: '0.1em', padding: '3px 8px', borderRadius: 6, textTransform: 'uppercase'
-                  }}>
-                    BULLETIN
-                  </span>
-                </div>
-                <div style={{ color: '#1B3A6B', fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{item.title}</div>
-                {item.excerpt && (
-                  <div style={{ color: '#6b7280', fontSize: 12, lineHeight: 1.5 }}>
-                    {item.excerpt.substring(0, 90)}{item.excerpt.length > 90 ? '...' : ''}
-                  </div>
-                )}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10 }}>
-                  {item.pdf_url && (
-                    <span
-                      onClick={e => { e.preventDefault(); window.open(`${API}${item.pdf_url}`, '_blank'); }}
-                      style={{
-                        background: 'rgba(27,58,107,0.08)', border: '1px solid rgba(27,58,107,0.15)',
-                        color: '#1B3A6B', padding: '4px 12px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer'
-                      }}
-                    >
-                      Download PDF
+                    <span style={{
+                      fontSize: 10, color: '#C9A84C', fontWeight: 700,
+                      letterSpacing: '0.1em', display: 'block', marginBottom: 4,
+                    }}>
+                      PINNED
                     </span>
                   )}
-                  {item.event_date && (
-                    <span style={{ color: '#9ca3af', fontSize: 11 }}>{formatDate(item.event_date)}</span>
-                  )}
-                </div>
-              </div>
-            </Link>
-          ))}
-
-          {/* Divider */}
-          {bulletins.length > 0 && events.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '16px 20px' }}>
-              <div style={{ flex: 1, height: 1, background: 'rgba(27,58,107,0.08)' }} />
-              <span style={{ color: '#9ca3af', fontSize: 10, letterSpacing: '0.1em', fontWeight: 600 }}>UPCOMING</span>
-              <div style={{ flex: 1, height: 1, background: 'rgba(27,58,107,0.08)' }} />
-            </div>
-          )}
-
-          {/* Events */}
-          {events.map(item => {
-            const past = isPast(item.event_date);
-            const soon = isSoon(item.event_date);
-            return (
-              <Link key={item.id} to={`/posts/${item.id}`} style={{ display: 'block', textDecoration: 'none' }}>
-                <div
-                  style={{
-                    margin: '6px 16px',
-                    background: past ? 'rgba(0,0,0,0.02)' : '#fff',
-                    border: '1px solid rgba(27,58,107,0.06)',
-                    borderLeft: soon ? '3px solid #22c55e' : '3px solid rgba(27,58,107,0.1)',
-                    borderRadius: 10,
-                    padding: '12px 16px',
-                    opacity: past ? 0.5 : 1,
-                    transition: 'all 0.2s ease',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(27,58,107,0.03)'; e.currentTarget.style.transform = 'translateX(4px)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = past ? 'rgba(0,0,0,0.02)' : '#fff'; e.currentTarget.style.transform = 'translateX(0)'; }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                    <div>
-                      {soon && (
-                        <span style={{ fontSize: 10, color: '#22c55e', fontWeight: 700, display: 'block', marginBottom: 4 }}>HAPPENING SOON</span>
-                      )}
-                      <div style={{ color: past ? '#9ca3af' : '#1B3A6B', fontSize: 14, fontWeight: 600 }}>{item.title}</div>
-                      <div style={{ color: '#9ca3af', fontSize: 11, marginTop: 2 }}>{item.category}</div>
+                  <div style={{ color: '#1B3A6B', fontSize: 15, fontWeight: 600, marginBottom: 4, lineHeight: 1.4 }}>
+                    {item.title}
+                  </div>
+                  {item.excerpt && (
+                    <div style={{ color: '#6b7280', fontSize: 13, lineHeight: 1.6, marginBottom: 8 }}>
+                      {item.excerpt.length > 100 ? item.excerpt.substring(0, 100) + '…' : item.excerpt}
                     </div>
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                     {item.event_date && (
-                      <div style={{ flexShrink: 0, textAlign: 'right', color: past ? '#d1d5db' : '#6b7280', fontSize: 11 }}>
-                        {formatDate(item.event_date)}
-                        {past && <div style={{ fontSize: 10, color: '#d1d5db' }}>Past</div>}
-                      </div>
+                      <span style={{ color: '#9ca3af', fontSize: 12 }}>{formatDate(item.event_date)}</span>
+                    )}
+                    {item.pdf_url && (
+                      <span
+                        onClick={e => { e.preventDefault(); window.open(`${API}${item.pdf_url}`, '_blank'); }}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 5,
+                          color: '#1B3A6B', fontSize: 12, fontWeight: 600,
+                          borderBottom: '1px solid rgba(27,58,107,0.3)', cursor: 'pointer',
+                        }}
+                      >
+                        <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                        </svg>
+                        Download PDF
+                      </span>
                     )}
                   </div>
                 </div>
               </Link>
-            );
-          })}
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Footer */}
-      <div style={{ padding: '14px 16px', borderTop: '1px solid rgba(27,58,107,0.06)', textAlign: 'center' }}>
-        <Link to="/posts" style={{ color: '#1B3A6B', fontSize: 12, textDecoration: 'none', fontWeight: 600, letterSpacing: '0.02em' }}>
-          View all posts
-        </Link>
-      </div>
+      {/* ── Events column ── */}
+      {events.length > 0 && (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+            <div style={{ width: 4, height: 22, background: '#1B3A6B', borderRadius: 2, flexShrink: 0 }} />
+            <span style={{
+              fontFamily: "'Cinzel', serif", fontSize: 13, fontWeight: 600,
+              color: '#1B3A6B', letterSpacing: '0.08em', textTransform: 'uppercase',
+            }}>
+              Upcoming Events
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {events.map(item => {
+              const past = isPast(item.event_date);
+              const soon = isSoon(item.event_date);
+              return (
+                <Link key={item.id} to={`/posts/${item.id}`} style={{ textDecoration: 'none' }}>
+                  <div style={{
+                    display: 'flex', gap: 16, alignItems: 'flex-start',
+                    borderBottom: '1px solid rgba(27,58,107,0.08)',
+                    paddingBottom: 12, opacity: past ? 0.45 : 1,
+                    transition: 'opacity 0.15s',
+                  }}
+                    onMouseEnter={e => { if (!past) e.currentTarget.style.opacity = '0.7'; }}
+                    onMouseLeave={e => { e.currentTarget.style.opacity = past ? '0.45' : '1'; }}
+                  >
+                    {item.event_date && (
+                      <div style={{
+                        flexShrink: 0, width: 44, textAlign: 'center',
+                        background: soon ? '#1B3A6B' : 'rgba(27,58,107,0.06)',
+                        borderRadius: 8, padding: '6px 4px',
+                      }}>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: soon ? '#fff' : '#1B3A6B', lineHeight: 1 }}>
+                          {new Date(item.event_date).getDate()}
+                        </div>
+                        <div style={{ fontSize: 9, fontWeight: 600, color: soon ? 'rgba(255,255,255,0.7)' : '#9ca3af', letterSpacing: '0.05em', textTransform: 'uppercase', marginTop: 2 }}>
+                          {new Date(item.event_date).toLocaleDateString('en-GB', { month: 'short' })}
+                        </div>
+                      </div>
+                    )}
+                    <div style={{ flex: 1 }}>
+                      {soon && (
+                        <span style={{ fontSize: 10, color: '#22c55e', fontWeight: 700, display: 'block', marginBottom: 2, letterSpacing: '0.06em' }}>
+                          HAPPENING SOON
+                        </span>
+                      )}
+                      <div style={{ color: past ? '#9ca3af' : '#1B3A6B', fontSize: 14, fontWeight: 600, lineHeight: 1.4 }}>
+                        {item.title}
+                      </div>
+                      {item.category && (
+                        <div style={{ color: '#9ca3af', fontSize: 12, marginTop: 2 }}>{item.category}</div>
+                      )}
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+      `}</style>
     </div>
   );
 }

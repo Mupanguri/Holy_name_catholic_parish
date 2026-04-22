@@ -3,6 +3,7 @@ import { Link, useNavigate, useOutletContext } from 'react-router-dom';
 import { useAuth, ROLES } from '../../context/AuthContext';
 import { getCorrectPath, getCorrectPagePath } from '../../utils/pathMapper';
 import { BRANCHES } from '../../constants/CMSConstants';
+import API_BASE_URL from '../../services/api';
 
 const PagesManager = () => {
   const { theme, colors } = useOutletContext() || {};
@@ -21,6 +22,13 @@ const PagesManager = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
   const [isToggling, setIsToggling] = useState(null);
+  const [statusModalPage, setStatusModalPage] = useState(null);
+  const [showCopyDialog, setShowCopyDialog] = useState(false);
+  const [copySearch, setCopySearch] = useState('');
+  const [seedingPages, setSeedingPages] = useState(false);
+  const [seedMsg, setSeedMsg] = useState('');
+  const [publishing, setPublishing] = useState(false);
+  const [publishMsg, setPublishMsg] = useState('');
 
   const handleDelete = async pageId => {
     if (
@@ -61,7 +69,7 @@ const PagesManager = () => {
       pages = pages.filter(p => p.title.toLowerCase().includes(searchTerm.toLowerCase()));
     }
     if (branchFilter) {
-      pages = pages.filter(p => p.branch === branchFilter || p.branch === parseInt(branchFilter));
+      pages = pages.filter(p => String(p.branch) === String(branchFilter));
     }
     return pages;
   };
@@ -86,14 +94,69 @@ const PagesManager = () => {
     alert('Page submitted for approval!');
   };
 
+  const handlePublishSystemPages = async () => {
+    if (publishing) return;
+    if (!window.confirm('Make all seeded system pages live and visible to the public?')) return;
+    setPublishing(true);
+    setPublishMsg('');
+    try {
+      const token = localStorage.getItem('adminToken');
+      const res = await fetch(`${API_BASE_URL}/api/admin/bulk-publish`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setPublishMsg(`✓ ${data.message}`);
+        setTimeout(() => window.location.reload(), 800);
+      } else {
+        setPublishMsg(`Error: ${data.error || 'Failed'}`);
+      }
+    } catch (e) {
+      setPublishMsg('Network error');
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const handleSeedPages = async () => {
+    if (seedingPages) return;
+    if (!window.confirm('Seed all system (hardcoded) pages into the database? Existing pages will not be overwritten.')) return;
+    setSeedingPages(true);
+    setSeedMsg('');
+    try {
+      const token = localStorage.getItem('adminToken');
+      const res = await fetch(`${API_BASE_URL}/api/admin/seed-pages`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSeedMsg(`✓ ${data.message}`);
+        // Reload page list
+        if (typeof window !== 'undefined') window.location.reload();
+      } else {
+        setSeedMsg(`Error: ${data.error || 'Failed'}`);
+      }
+    } catch (e) {
+      setSeedMsg('Network error');
+    } finally {
+      setSeedingPages(false);
+    }
+  };
+
   const getStatusBadge = page => {
     const statusClass = `pm-status-${page.status || 'live'}`;
     const label =
-      { draft: 'Draft', pending: 'Pending', rejected: 'Rejected', live: 'Live' }[page.status] ||
+      { draft: 'Draft', pending: 'Pending', rejected: 'Rejected', live: 'Live', whitelisted: 'On Hold' }[page.status] ||
       'Live';
+    const hasPulse = page.status === 'rejected' || page.status === 'pending';
+    const isClickable = page.status === 'rejected' || page.rejection_notes || page.review_notes;
     return (
-      <span
-        className={statusClass}
+      <button
+        className={`${statusClass}${hasPulse ? ' pm-status-pulse' : ''}`}
+        onClick={() => isClickable && setStatusModalPage(page)}
         style={{
           display: 'inline-block',
           padding: '3px 9px',
@@ -102,10 +165,14 @@ const PagesManager = () => {
           fontWeight: 600,
           letterSpacing: '0.04em',
           border: '1px solid',
+          cursor: isClickable ? 'pointer' : 'default',
+          background: 'none',
         }}
+        title={isClickable ? 'Click to see details' : undefined}
       >
         {label}
-      </span>
+        {isClickable && <span style={{ marginLeft: 4, fontSize: 9, opacity: 0.7 }}>▼</span>}
+      </button>
     );
   };
 
@@ -350,6 +417,59 @@ const PagesManager = () => {
         .pm-approved { font-size: 12px; color: #22c55e; display: flex; align-items: center; gap: 5px; }
         .pm-no-val { color: var(--theme-text-muted); }
         .pm-author { font-size: 12.5px; }
+
+        @keyframes pm-pulse {
+          0%, 100% { box-shadow: 0 0 0 0 currentColor; opacity: 1; }
+          50% { box-shadow: 0 0 0 4px transparent; opacity: 0.8; }
+        }
+        .pm-status-pulse { animation: pm-pulse 2s ease-in-out infinite; }
+
+        .pm-action-wysiwyg { color: #60a5fa !important; }
+        .pm-action-wysiwyg:hover { background: rgba(59,130,246,0.15); color: #60a5fa !important; }
+        .pm-action-copy { color: #a78bfa !important; }
+        .pm-action-copy:hover { background: rgba(167,139,250,0.15); color: #a78bfa !important; }
+
+        .pm-modal-overlay {
+          position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+          display: flex; align-items: center; justify-content: center;
+          z-index: 9999; padding: 24px; backdrop-filter: blur(4px);
+        }
+        .pm-modal {
+          background: var(--theme-bg, #12192a);
+          border: 1px solid var(--theme-border, rgba(168,204,232,0.1));
+          border-radius: 14px; width: 100%; max-width: 480px;
+          padding: 28px; max-height: 85vh; overflow-y: auto;
+          box-shadow: 0 24px 80px rgba(0,0,0,0.5);
+        }
+        .pm-modal-title { font-family: 'Cinzel', serif; font-size: 16px; font-weight: 600; color: var(--theme-text); margin-bottom: 20px; }
+        .pm-modal-field { margin-bottom: 14px; }
+        .pm-modal-label { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--theme-text-muted); margin-bottom: 5px; }
+        .pm-modal-value { font-size: 13.5px; color: var(--theme-text); background: rgba(168,204,232,0.05); border: 1px solid rgba(168,204,232,0.1); border-radius: 8px; padding: 10px 14px; }
+        .pm-modal-close {
+          margin-top: 20px; padding: 9px 18px; border-radius: 8px;
+          background: rgba(168,204,232,0.1); border: 1px solid rgba(168,204,232,0.15);
+          color: var(--theme-text); font-size: 13px; font-weight: 500; cursor: pointer;
+          font-family: 'Inter', sans-serif; transition: all 0.15s;
+        }
+        .pm-modal-close:hover { background: rgba(168,204,232,0.18); }
+
+        .pm-copy-search {
+          width: 100%; margin-bottom: 14px;
+          background: rgba(168,204,232,0.05); border: 1px solid rgba(168,204,232,0.1);
+          border-radius: 8px; padding: 10px 14px; font-size: 13px;
+          color: var(--theme-text); outline: none; font-family: 'Inter', sans-serif;
+        }
+        .pm-copy-search::placeholder { color: rgba(168,204,232,0.25); }
+        .pm-copy-list { max-height: 280px; overflow-y: auto; }
+        .pm-copy-item {
+          padding: 12px 14px; border-radius: 8px; cursor: pointer;
+          border: 1px solid transparent; margin-bottom: 6px;
+          transition: all 0.14s;
+        }
+        .pm-copy-item:hover { background: rgba(168,204,232,0.07); border-color: rgba(168,204,232,0.12); }
+        .pm-copy-item-title { font-size: 13.5px; font-weight: 500; color: var(--theme-text); }
+        .pm-copy-item-meta { font-size: 11.5px; color: var(--theme-text-muted); margin-top: 3px; }
+        .pm-empty { padding: 40px 24px; text-align: center; color: var(--theme-text-muted); font-size: 13.5px; }
       `}</style>
 
       <div className="pm-root">
@@ -358,24 +478,63 @@ const PagesManager = () => {
             <div className="pm-title">Pages Management</div>
             <div className="pm-sub">Manage guilds, committees, and site pages</div>
           </div>
-          {!isSuperAdmin() && (
-            <Link to="/admin/pages/new" className="pm-new-btn">
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            {isSuperAdmin() && (
+              <>
+                <button
+                  onClick={handleSeedPages}
+                  disabled={seedingPages}
+                  className="pm-new-btn"
+                  style={{ background: 'rgba(168,85,247,0.12)', borderColor: 'rgba(168,85,247,0.3)', color: '#c084fc' }}
+                  title="Insert all hardcoded site pages into the database so admins can manage them"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2a5 5 0 015 5v2a5 5 0 01-10 0V7a5 5 0 015-5z"/><path d="M6 21v-2a5 5 0 0110 0v2"/>
+                  </svg>
+                  {seedingPages ? 'Seeding…' : 'Seed System Pages'}
+                </button>
+                <button
+                  onClick={handlePublishSystemPages}
+                  disabled={publishing}
+                  className="pm-new-btn"
+                  style={{ background: 'rgba(34,197,94,0.1)', borderColor: 'rgba(34,197,94,0.3)', color: '#4ade80' }}
+                  title="Make all seeded system pages live and visible"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M5 12l5 5L20 7"/>
+                  </svg>
+                  {publishing ? 'Publishing…' : 'Publish System Pages'}
+                </button>
+                {(seedMsg || publishMsg) && (
+                  <span style={{ fontSize: 12, color: (seedMsg || publishMsg).startsWith('✓') ? '#4ade80' : '#f87171' }}>
+                    {seedMsg || publishMsg}
+                  </span>
+                )}
+              </>
+            )}
+            {!isSuperAdmin() && (
+              <button
+                onClick={() => setShowCopyDialog(true)}
+                className="pm-new-btn"
+                style={{ background: 'rgba(167,139,250,0.15)', borderColor: 'rgba(167,139,250,0.3)', color: '#a78bfa' }}
               >
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-              New Page
-            </Link>
-          )}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                  <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                </svg>
+                Copy Existing
+              </button>
+            )}
+            {!isSuperAdmin() && (
+              <Link to="/admin/pages/new" className="pm-new-btn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                New Page
+              </Link>
+            )}
+          </div>
         </div>
 
         <div className="pm-panel">
@@ -510,6 +669,14 @@ const PagesManager = () => {
                         >
                           Edit
                         </Link>
+                        {!isSuperAdmin() && (
+                          <Link
+                            to={`/admin/pages/wysiwyg/${page.id}`}
+                            className="pm-action-btn pm-action-wysiwyg"
+                          >
+                            Visual
+                          </Link>
+                        )}
                         {page.status === 'draft' && (
                           <button
                             onClick={() => handleSubmitForApproval(page.id)}
@@ -544,6 +711,91 @@ const PagesManager = () => {
           </div>
         </div>
       </div>
+
+      {/* Status Detail Modal */}
+      {statusModalPage && (
+        <div className="pm-modal-overlay" onClick={() => setStatusModalPage(null)}>
+          <div className="pm-modal" onClick={e => e.stopPropagation()}>
+            <div className="pm-modal-title">{statusModalPage.title} — Status Details</div>
+            <div className="pm-modal-field">
+              <div className="pm-modal-label">Current Status</div>
+              <div className="pm-modal-value">{statusModalPage.status}</div>
+            </div>
+            {statusModalPage.rejection_notes && (
+              <div className="pm-modal-field">
+                <div className="pm-modal-label">Rejection Notes</div>
+                <div className="pm-modal-value" style={{ color: '#f87171' }}>{statusModalPage.rejection_notes}</div>
+              </div>
+            )}
+            {statusModalPage.review_notes && (
+              <div className="pm-modal-field">
+                <div className="pm-modal-label">Reviewer Notes</div>
+                <div className="pm-modal-value">{statusModalPage.review_notes}</div>
+              </div>
+            )}
+            {statusModalPage.reviewed_by && (
+              <div className="pm-modal-field">
+                <div className="pm-modal-label">Reviewed By</div>
+                <div className="pm-modal-value">{statusModalPage.reviewed_by}</div>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="pm-modal-close" onClick={() => setStatusModalPage(null)}>Close</button>
+              {statusModalPage.status === 'rejected' && !isSuperAdmin() && (
+                <Link
+                  to={`/admin/pages/edit/${statusModalPage.id}`}
+                  className="pm-modal-close"
+                  style={{ background: 'rgba(34,197,94,0.12)', borderColor: 'rgba(34,197,94,0.25)', color: '#22c55e', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+                  onClick={() => setStatusModalPage(null)}
+                >
+                  Edit & Resubmit
+                </Link>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Copy Existing Page Dialog */}
+      {showCopyDialog && (
+        <div className="pm-modal-overlay" onClick={() => setShowCopyDialog(false)}>
+          <div className="pm-modal" onClick={e => e.stopPropagation()}>
+            <div className="pm-modal-title">Copy Existing Page</div>
+            <p style={{ fontSize: 13, color: 'var(--theme-text-muted)', marginBottom: 16 }}>
+              Select a page to use as a template. Its layout and content will be copied into a new draft.
+            </p>
+            <input
+              className="pm-copy-search"
+              type="text"
+              placeholder="Search pages..."
+              value={copySearch}
+              onChange={e => setCopySearch(e.target.value)}
+              autoFocus
+            />
+            <div className="pm-copy-list">
+              {allPages
+                .filter(p => p.title.toLowerCase().includes(copySearch.toLowerCase()))
+                .map(p => (
+                  <div
+                    key={p.id}
+                    className="pm-copy-item"
+                    onClick={() => {
+                      setShowCopyDialog(false);
+                      navigate(`/admin/pages/wysiwyg/new?copyFrom=${p.id}`);
+                    }}
+                  >
+                    <div className="pm-copy-item-title">{p.title}</div>
+                    <div className="pm-copy-item-meta">{p.status} · {p.branch ? BRANCHES.find(b => b.id === p.branch)?.name || p.branch : 'No branch'}</div>
+                  </div>
+                ))}
+              {allPages.filter(p => p.title.toLowerCase().includes(copySearch.toLowerCase())).length === 0 && (
+                <div style={{ padding: 20, textAlign: 'center', color: 'var(--theme-text-muted)', fontSize: 13 }}>No pages found</div>
+              )}
+            </div>
+            <button className="pm-modal-close" style={{ marginTop: 16 }} onClick={() => setShowCopyDialog(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
     </>
   );
 };

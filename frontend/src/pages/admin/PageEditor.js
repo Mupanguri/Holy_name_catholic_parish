@@ -316,14 +316,23 @@ const PageEditor = () => {
 
   useEffect(() => {
     if (!isNew) {
-      const page = getPageById(id);
+      const page = getPageById(parseInt(id));
       if (page) {
+        let sections = [];
+        if (Array.isArray(page.sections) && page.sections.length > 0) {
+          sections = page.sections;
+        } else if (page.content) {
+          try {
+            const parsed = JSON.parse(page.content);
+            if (Array.isArray(parsed)) sections = parsed;
+          } catch {}
+        }
         setFormData({
           title: page.title || '',
           slug: page.slug || '',
           path: page.path || '',
           content: page.content || '',
-          sections: page.sections || [],
+          sections,
           changeDescription: '',
           branch: page.branch || '',
         });
@@ -354,7 +363,8 @@ const PageEditor = () => {
     if (value.trim()) {
       const allPages = getAllPages();
       const existing = allPages.find(
-        p => p.title?.toLowerCase() === value.toLowerCase() || p.slug === slug
+        p => (p.title?.toLowerCase() === value.toLowerCase() || p.slug === slug)
+          && p.id !== parseInt(id)
       );
       if (existing) {
         setExistingPageId(existing.id);
@@ -414,7 +424,7 @@ const PageEditor = () => {
   };
 
   const handleAddSection = () => {
-    if (!selectedTemplate) return;
+    if (isNew && !selectedTemplate) return;
     const newSectionId = `custom_${Date.now()}`;
     setFormData(prev => ({
       ...prev,
@@ -427,12 +437,14 @@ const PageEditor = () => {
 
   const handleSave = async (submitToApproval = false) => {
     if (!formData.title.trim()) { setNameError('Page title is required'); return; }
-    if (!selectedTemplate) { alert('Please select a template'); return; }
+    if (isNew && !selectedTemplate) { alert('Please select a template'); return; }
     if (!formData.path) { alert('Please select a page path'); return; }
 
-    const templateAllowedPaths = getTemplateAllowedPaths(selectedTemplate);
-    const isPathValid = templateAllowedPaths.some(allowedPath => formData.path.startsWith(allowedPath));
-    if (!isPathValid) { alert(`This template only allows paths under: ${selectedTemplate.path}`); return; }
+    if (selectedTemplate) {
+      const templateAllowedPaths = getTemplateAllowedPaths(selectedTemplate);
+      const isPathValid = templateAllowedPaths.some(allowedPath => formData.path.startsWith(allowedPath));
+      if (!isPathValid) { alert(`This template only allows paths under: ${selectedTemplate.path}`); return; }
+    }
     if (!isNew && !formData.changeDescription.trim()) { alert('Please provide a description of changes'); return; }
 
     setSaving(true);
@@ -456,7 +468,7 @@ const PageEditor = () => {
     setSaving(false);
   };
 
-  const page = !isNew ? getPageById(id) : null;
+  const page = !isNew ? getPageById(parseInt(id)) : null;
 
   // Template selection screen
   if (isNew && !selectedTemplate) {
@@ -746,7 +758,7 @@ const PageEditor = () => {
             <div>
               <div className="pe-content-title">Page Content</div>
               {formData.sections.length === 0 ? (
-                <div className="pe-no-sections">No sections yet. Select a template to load sections.</div>
+                <div className="pe-no-sections">{isNew ? 'No sections yet. Select a template to load sections.' : 'No content yet. Click "+ Add New Section" to start.'}</div>
               ) : (
                 formData.sections.map((section, index) => {
                   const templateSection = selectedTemplate?.sections.find(s => s.id === section.id);

@@ -30,6 +30,7 @@ export const ROLES = {
 export const AuthProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const [pages, setPages] = useState([]);
+  const [publicPages, setPublicPages] = useState([]);
   const [posts, setPosts] = useState([]);
   const [media, setMedia] = useState([]);
   const [submissions, setSubmissions] = useState([]);
@@ -69,6 +70,7 @@ export const AuthProvider = ({ children }) => {
       const pages = Array.isArray(pagesData) ? pagesData : pagesData.data || [];
       const posts = Array.isArray(postsData) ? postsData : postsData.data || [];
       setPages(pages);
+      setPublicPages(pages);
       setPosts(posts);
     } catch (error) {
       console.error('Error loading public data:', error);
@@ -180,6 +182,30 @@ export const AuthProvider = ({ children }) => {
         } catch (e) {
           console.error('Failed to load video links:', e);
         }
+
+        // Load notifications for soccom_admin
+        try {
+          const notifRes = await fetch(`${api.baseUrl}/api/notifications`, {
+            headers: { Authorization: `Bearer ${localStorage.getItem('adminToken')}` },
+          });
+          const notificationsData = notifRes.ok ? await notifRes.json() : [];
+          setNotifications(Array.isArray(notificationsData) ? notificationsData : []);
+        } catch (e) {
+          console.error('Failed to load notifications:', e);
+        }
+
+        // Load own documents for soccom_admin (filter by author_id)
+        try {
+          const savedUser = JSON.parse(localStorage.getItem('adminUser') || '{}');
+          const docsRes = await fetch(
+            `${api.baseUrl}/api/documents?author_id=${savedUser.id}`,
+            { headers: { Authorization: `Bearer ${localStorage.getItem('adminToken')}` } }
+          );
+          const documentsData = docsRes.ok ? await docsRes.json() : [];
+          setDocuments(Array.isArray(documentsData) ? documentsData : []);
+        } catch (e) {
+          console.error('Failed to load own documents:', e);
+        }
       }
     } catch (error) {
       console.error('Error loading data:', error);
@@ -211,7 +237,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   // Logout
-  const logout = () => {
+  const logout = async () => {
     setCurrentUser(null);
     setPages([]);
     setPosts([]);
@@ -220,6 +246,7 @@ export const AuthProvider = ({ children }) => {
     setTasks([]);
     localStorage.removeItem('adminToken');
     localStorage.removeItem('adminUser');
+    await loadPublicData();
   };
 
   // Check roles
@@ -242,6 +269,7 @@ export const AuthProvider = ({ children }) => {
   const getDraftPages = () => (pages || []).filter(p => p.status === 'draft');
   const getPageById = id => (pages || []).find(p => p.id === id);
   const getPageBySlug = slug => (pages || []).find(p => p.slug === slug);
+  const getPublicPageBySlug = slug => (publicPages || []).find(p => p.slug === slug);
 
   const getPageTree = async () => {
     try {
@@ -265,7 +293,8 @@ export const AuthProvider = ({ children }) => {
   };
 
   const togglePageVisibility = async id => {
-    const updated = await pagesAPI.toggleVisibility(id);
+    const current = pages.find(p => p.id === id);
+    const updated = await pagesAPI.toggleVisibility(id, !current?.visible);
     setPages(prev => prev.map(p => (p.id === id ? updated : p)));
     return updated;
   };
@@ -277,7 +306,7 @@ export const AuthProvider = ({ children }) => {
 
   const submitPageForApproval = async (id, changeDescription = '') => {
     const result = await pagesAPI.submit(id, changeDescription);
-    setPages(prev => prev.map(p => (p.id === id ? { ...p, status: 'pending' } : p)));
+    setPages(prev => prev.map(p => (p.id === parseInt(id) ? { ...p, status: 'pending' } : p)));
     return result;
   };
 
@@ -323,7 +352,8 @@ export const AuthProvider = ({ children }) => {
   };
 
   const togglePostVisibility = async id => {
-    const updated = await postsAPI.toggleVisibility(id);
+    const current = posts.find(p => p.id === id);
+    const updated = await postsAPI.toggleVisibility(id, !current?.visible);
     setPosts(prev => prev.map(p => (p.id === id ? updated : p)));
     return updated;
   };
@@ -410,6 +440,18 @@ export const AuthProvider = ({ children }) => {
     return updated;
   };
 
+  const whitelistSubmission = async (submissionId, notes) => {
+    const token = localStorage.getItem('adminToken');
+    const response = await fetch(`${api.baseUrl}/api/submissions/${submissionId}/whitelist`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ notes }),
+    });
+    const updated = await response.json();
+    setSubmissions(prev => prev.map(s => (s.id === submissionId ? { ...s, status: 'whitelisted', notes } : s)));
+    return updated;
+  };
+
   const resubmitSubmission = async submissionId => {
     const updated = await submissionsAPI.resubmit(submissionId);
     setSubmissions(prev =>
@@ -443,7 +485,10 @@ export const AuthProvider = ({ children }) => {
 
   const updateTask = async (taskId, taskData) => {
     const updated = await tasksAPI.update(taskId, taskData);
-    setTasks(prev => prev.map(t => (t.id === taskId ? updated : t)));
+    // Only replace the task in state if the response is a valid task object (has an id)
+    if (updated && updated.id) {
+      setTasks(prev => prev.map(t => (t.id === taskId ? updated : t)));
+    }
     return updated;
   };
 
@@ -453,12 +498,12 @@ export const AuthProvider = ({ children }) => {
   };
 
   // ============ USERS ============
-  const getAllUsers = () => users || [];
+  const getAllUsers = () => (Array.isArray(users) ? users : []);
 
   const loadUsers = async () => {
     try {
       const allUsers = await usersAPI.getAll();
-      setUsers(allUsers);
+      setUsers(Array.isArray(allUsers) ? allUsers : []);
     } catch (error) {
       console.error('Error loading users:', error);
     }
@@ -473,7 +518,10 @@ export const AuthProvider = ({ children }) => {
   const refreshDocuments = async () => {
     try {
       const token = localStorage.getItem('adminToken');
-      const response = await fetch(`${api.baseUrl}/api/documents`, {
+      const savedUser = JSON.parse(localStorage.getItem('adminUser') || '{}');
+      // super_admin sees all; soccom_admin sees only their own
+      const authorFilter = savedUser.role === 'super_admin' ? '' : `?author_id=${savedUser.id}`;
+      const response = await fetch(`${api.baseUrl}/api/documents${authorFilter}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await response.json();
@@ -633,6 +681,7 @@ export const AuthProvider = ({ children }) => {
 
     // Pages
     pages,
+    publicPages,
     getAllPages,
     getLivePages,
     getVisiblePages,
@@ -640,6 +689,7 @@ export const AuthProvider = ({ children }) => {
     getDraftPages,
     getPageById,
     getPageBySlug,
+    getPublicPageBySlug,
     getPageTree,
     createPage,
     updatePage,
@@ -679,6 +729,7 @@ export const AuthProvider = ({ children }) => {
     approveSubmission,
     rejectSubmission,
     resubmitSubmission,
+    whitelistSubmission,
     addSubmissionComment,
 
     // Tasks

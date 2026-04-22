@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { getFullUrl } from '../../services/api';
+import API_BASE_URL from '../../services/api';
 import { getAllTemplates } from '../../config/pageTemplates';
 
 const SubmissionsReview = () => {
@@ -12,6 +13,7 @@ const SubmissionsReview = () => {
     getPendingSubmissions,
     approveSubmission,
     rejectSubmission,
+    whitelistSubmission,
     addSubmissionComment,
     isSuperAdmin,
     currentUser,
@@ -76,9 +78,7 @@ const SubmissionsReview = () => {
   useEffect(() => {
     const fetchTemplates = async () => {
       try {
-        const response = await fetch(
-          `${process.env.REACT_APP_API_URL || 'http://localhost:5000'}/api/templates`
-        );
+        const response = await fetch(`${API_BASE_URL}/api/templates`);
         const data = await response.json();
         const templateData = Array.isArray(data) ? data : data.data || [];
         setTemplates(templateData);
@@ -622,6 +622,14 @@ const SubmissionsReview = () => {
     }
   };
 
+  const handleWhitelist = async item => {
+    if (item.itemType === 'submission') {
+      setSelectedSubmission(item);
+      setActionType('whitelist');
+      setShowModal(true);
+    }
+  };
+
   const handleViewDetails = item => {
     setSelectedSubmission(item);
     setActionType('view');
@@ -637,6 +645,7 @@ const SubmissionsReview = () => {
   const submitAction = async () => {
     if (actionType === 'approve') await approveSubmission(selectedSubmission.id, notes);
     else if (actionType === 'reject') await rejectSubmission(selectedSubmission.id, notes);
+    else if (actionType === 'whitelist') await whitelistSubmission(selectedSubmission.id, notes);
     setShowModal(false);
     setNotes('');
     setSelectedSubmission(null);
@@ -1237,6 +1246,15 @@ const SubmissionsReview = () => {
                                 >
                                   Reject
                                 </button>
+                                {item.itemType === 'submission' && (
+                                  <button
+                                    onClick={() => handleWhitelist(item)}
+                                    className="sra-action-btn"
+                                    style={{ background: 'rgba(234,179,8,0.12)', border: '1px solid rgba(234,179,8,0.3)', color: '#eab308' }}
+                                  >
+                                    Hold
+                                  </button>
+                                )}
                               </>
                             )}
                           </div>
@@ -1440,7 +1458,7 @@ const SubmissionsReview = () => {
               {actionType !== 'view' && (
                 <div className="sra-modal-section">
                   <div className="sra-modal-section-title">
-                    {actionType === 'approve' ? 'Approval Notes' : 'Rejection Reason *'}
+                    {actionType === 'approve' ? 'Approval Notes' : actionType === 'whitelist' ? 'Hold Notes (optional)' : 'Rejection Reason *'}
                   </div>
                   <textarea
                     value={notes}
@@ -1483,6 +1501,15 @@ const SubmissionsReview = () => {
                     className="sra-modal-btn sra-modal-btn-red"
                   >
                     Reject & Return
+                  </button>
+                )}
+                {actionType === 'whitelist' && (
+                  <button
+                    onClick={submitAction}
+                    className="sra-modal-btn"
+                    style={{ background: 'rgba(234,179,8,0.15)', border: '1px solid rgba(234,179,8,0.35)', color: '#eab308' }}
+                  >
+                    Hold (Whitelist)
                   </button>
                 )}
               </div>

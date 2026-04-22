@@ -2,7 +2,6 @@ import React from 'react';
 import Slideshow from '../pages/slideshow';
 import * as Separator from '@radix-ui/react-separator';
 import { Link } from 'react-router-dom';
-import Gallery from '../Gallery/Gallery';
 import { useAuth } from '../context/AuthContext';
 import GlobalTheme from '../components/GlobalTheme';
 import { LoadingSpinner, ErrorBanner } from './shared';
@@ -40,7 +39,7 @@ const Home = () => {
 
   const recentPosts = [...posts]
     .sort((a, b) => new Date(b.date || b.created_at) - new Date(a.date || a.created_at))
-    .slice(0, 6);
+    .slice(0, 3);
 
   const formatDate = dateString => {
     const options = { year: 'numeric', month: 'short', day: 'numeric' };
@@ -99,19 +98,23 @@ const Home = () => {
                 <h3>Get Involved</h3>
               </div>
               <div style={{ padding: 28, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                <img
-                  src={process.env.PUBLIC_URL + '/images/logo.jpg'}
-                  alt="Holy Name Church"
-                  style={{
-                    width: 140,
-                    height: 140,
-                    objectFit: 'cover',
-                    borderRadius: '50%',
-                    marginBottom: 28,
-                    border: '3px solid #1B3A6B',
-                    boxShadow: '0 8px 24px rgba(27,58,107,0.15)'
-                  }}
-                />
+                <div style={{ marginBottom: 24, overflow: 'hidden', borderRadius: 12 }}>
+                  <img
+                    src={process.env.PUBLIC_URL + '/images/logo.jpg'}
+                    alt="Holy Name Church"
+                    style={{
+                      width: 140,
+                      height: 140,
+                      objectFit: 'cover',
+                      borderRadius: 12,
+                      display: 'block',
+                      transition: 'transform 0.35s ease',
+                      boxShadow: '0 8px 24px rgba(27,58,107,0.2)'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.08)'}
+                    onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                  />
+                </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', maxWidth: 260 }}>
                   <Link to="/programs" className="hn-btn-primary">View Events</Link>
                   <Link to="/contact" className="hn-btn-outline">Reach Out To Us</Link>
@@ -121,7 +124,7 @@ const Home = () => {
 
             {/* Adoration & Reconciliation */}
             <div className="hn-card">
-              <div className="hn-card-header hn-card-header-red">
+              <div className="hn-card-header hn-card-header-blue">
                 <h3>Adoration & Reconciliation</h3>
               </div>
               <div style={{ padding: 28 }}>
@@ -161,7 +164,7 @@ const Home = () => {
       {/* ── Recent Posts ── */}
       <Section title="Recent Posts" subtitle="Latest news and updates from Holy Name Parish">
         {recentPosts.length > 0 ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 24, maxWidth: 900, margin: '0 auto' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24, maxWidth: 1000, margin: '0 auto' }}>
             {recentPosts.map(post => (
               <Link
                 to={`/posts/${post.id}`}
@@ -201,12 +204,35 @@ const Home = () => {
 
       {/* ── Parish Notices & Events ── */}
       <Section title="Parish Notices & Events" subtitle="Bulletins, upcoming events and announcements">
-        <div style={{ maxWidth: 420, margin: '0 auto' }}>
-          <NoticesCard />
-        </div>
+        <NoticesCard />
       </Section>
 
-      <Gallery />
+      {/* ── Library Preview ── */}
+      <Section title="Parish Library" subtitle="Photos, documents and media from Holy Name Parish">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, maxWidth: 900, margin: '0 auto 32px' }}>
+          {[15, 16, 17, 18, 19, 20].map(n => (
+            <Link
+              key={n}
+              to="/library"
+              style={{ display: 'block', overflow: 'hidden', borderRadius: 12, boxShadow: '0 4px 16px rgba(27,58,107,0.12)', textDecoration: 'none' }}
+            >
+              <img
+                src={process.env.PUBLIC_URL + `/images/${n}.jpg`}
+                alt={`Parish photo ${n}`}
+                style={{
+                  width: '100%', height: 160, objectFit: 'cover', display: 'block',
+                  transition: 'transform 0.35s ease'
+                }}
+                onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.07)'}
+                onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+              />
+            </Link>
+          ))}
+        </div>
+        <div style={{ textAlign: 'center' }}>
+          <Link to="/library" className="hn-view-all">View Full Library</Link>
+        </div>
+      </Section>
 
       <Separator.Root style={{ background: 'rgba(27,58,107,0.06)', height: 1, width: '100%', margin: '32px 0' }} />
     </div>

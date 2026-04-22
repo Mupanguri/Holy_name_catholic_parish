@@ -21,6 +21,7 @@ const PostsManager = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [isToggling, setIsToggling] = useState(null);
+  const [statusModalPost, setStatusModalPost] = useState(null);
 
   useEffect(() => {
     const fetchPosts = async () => {
@@ -96,12 +97,13 @@ const PostsManager = () => {
     if (post.submission_status === 'rejected') key = 'rejected';
     else if (post.submission_status === 'pending' || post.status === 'pending') key = 'pending';
     else if (post.status === 'draft') key = 'draft';
-    const label = { rejected: 'Rejected', pending: 'Pending Review', draft: 'Draft', live: 'Live' }[
-      key
-    ];
+    const label = { rejected: 'Rejected', pending: 'Pending Review', draft: 'Draft', live: 'Live' }[key];
+    const hasPulse = key === 'rejected' || key === 'pending';
+    const isClickable = key === 'rejected' || post.rejection_notes || post.review_notes;
     return (
-      <span
-        className={`pom-status-${key}`}
+      <button
+        className={`pom-status-${key}${hasPulse ? ' pom-status-pulse' : ''}`}
+        onClick={() => isClickable && setStatusModalPost(post)}
         style={{
           display: 'inline-block',
           padding: '3px 9px',
@@ -110,10 +112,14 @@ const PostsManager = () => {
           fontWeight: 600,
           letterSpacing: '0.04em',
           border: '1px solid',
+          cursor: isClickable ? 'pointer' : 'default',
+          background: 'none',
         }}
+        title={isClickable ? 'Click to see details' : undefined}
       >
         {label}
-      </span>
+        {isClickable && <span style={{ marginLeft: 4, fontSize: 9, opacity: 0.7 }}>▼</span>}
+      </button>
     );
   };
 
@@ -327,6 +333,35 @@ const PostsManager = () => {
         .pom-date { font-size: 12.5px; color: var(--theme-text-muted); white-space: nowrap; }
 
         .pom-empty { padding: 48px 24px; text-align: center; color: var(--theme-text-muted); font-size: 13.5px; }
+
+        @keyframes pom-pulse {
+          0%, 100% { box-shadow: 0 0 0 0 currentColor; opacity: 1; }
+          50% { box-shadow: 0 0 0 4px transparent; opacity: 0.8; }
+        }
+        .pom-status-pulse { animation: pom-pulse 2s ease-in-out infinite; }
+
+        .pom-modal-overlay {
+          position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+          display: flex; align-items: center; justify-content: center;
+          z-index: 9999; padding: 24px; backdrop-filter: blur(4px);
+        }
+        .pom-modal {
+          background: var(--theme-bg, #12192a);
+          border: 1px solid var(--theme-border, rgba(168,204,232,0.1));
+          border-radius: 14px; width: 100%; max-width: 480px;
+          padding: 28px; max-height: 85vh; overflow-y: auto;
+          box-shadow: 0 24px 80px rgba(0,0,0,0.5);
+        }
+        .pom-modal-title { font-family: 'Cinzel', serif; font-size: 16px; font-weight: 600; color: var(--theme-text); margin-bottom: 20px; }
+        .pom-modal-label { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--theme-text-muted); margin-bottom: 5px; }
+        .pom-modal-value { font-size: 13.5px; color: var(--theme-text); background: rgba(168,204,232,0.05); border: 1px solid rgba(168,204,232,0.1); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; }
+        .pom-modal-close {
+          margin-top: 8px; padding: 9px 18px; border-radius: 8px;
+          background: rgba(168,204,232,0.1); border: 1px solid rgba(168,204,232,0.15);
+          color: var(--theme-text); font-size: 13px; font-weight: 500; cursor: pointer;
+          font-family: 'Inter', sans-serif; transition: all 0.15s;
+        }
+        .pom-modal-close:hover { background: rgba(168,204,232,0.18); }
       `}</style>
 
       <div className="pom-root">
@@ -510,6 +545,48 @@ const PostsManager = () => {
           </div>
         </div>
       </div>
+
+      {/* Status Detail Modal */}
+      {statusModalPost && (
+        <div className="pom-modal-overlay" onClick={() => setStatusModalPost(null)}>
+          <div className="pom-modal" onClick={e => e.stopPropagation()}>
+            <div className="pom-modal-title">{statusModalPost.title} — Status Details</div>
+            <div className="pom-modal-label">Current Status</div>
+            <div className="pom-modal-value">{statusModalPost.submission_status || statusModalPost.status}</div>
+            {statusModalPost.rejection_notes && (
+              <>
+                <div className="pom-modal-label">Rejection Notes</div>
+                <div className="pom-modal-value" style={{ color: '#f87171' }}>{statusModalPost.rejection_notes}</div>
+              </>
+            )}
+            {statusModalPost.review_notes && (
+              <>
+                <div className="pom-modal-label">Reviewer Notes</div>
+                <div className="pom-modal-value">{statusModalPost.review_notes}</div>
+              </>
+            )}
+            {statusModalPost.reviewed_by && (
+              <>
+                <div className="pom-modal-label">Reviewed By</div>
+                <div className="pom-modal-value">{statusModalPost.reviewed_by}</div>
+              </>
+            )}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="pom-modal-close" onClick={() => setStatusModalPost(null)}>Close</button>
+              {(statusModalPost.submission_status === 'rejected' || statusModalPost.status === 'rejected') && !isSuperAdmin() && (
+                <Link
+                  to={`/admin/posts/edit/${statusModalPost.id}`}
+                  className="pom-modal-close"
+                  style={{ background: 'rgba(34,197,94,0.12)', borderColor: 'rgba(34,197,94,0.25)', color: '#22c55e', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+                  onClick={() => setStatusModalPost(null)}
+                >
+                  Edit & Resubmit
+                </Link>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

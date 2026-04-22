@@ -14,6 +14,8 @@ const PostEditor = () => {
     updatePost,
     submitPostForApproval,
     media,
+    documents,
+    videoLinks,
     currentUser,
     getPostRejectionNotes,
     refreshPostsWithSubmissionStatus,
@@ -37,9 +39,8 @@ const PostEditor = () => {
   const imageFiles = (media || []).filter(
     m => m.url && (m.url.match(/\.(jpg|jpeg|png|gif|webp)$/i) || m.url.includes('/uploads/'))
   );
-  const documentFiles = (media || []).filter(
-    m => m.url && (m.url.match(/\.(pdf|doc|docx)$/i) || m.url.includes('/uploads/'))
-  );
+  const approvedDocuments = (documents || []).filter(d => d.status === 'approved');
+  const approvedVideos = (videoLinks || []).filter(v => v.status === 'approved');
 
   const [formData, setFormData] = useState({
     title: '',
@@ -50,6 +51,10 @@ const PostEditor = () => {
     isBulletin: false,
     pdfUrl: '',
     eventDate: '',
+    previewImage: '',
+    attachedDocuments: [],
+    attachedVideos: [],
+    imageLayouts: {},
   });
 
   const [saving, setSaving] = useState(false);
@@ -67,6 +72,10 @@ const PostEditor = () => {
           isBulletin: post.is_bulletin || post.isBulletin || false,
           pdfUrl: post.pdf_url || post.pdfUrl || '',
           eventDate: post.event_date || post.eventDate || '',
+          previewImage: post.preview_image || '',
+          attachedDocuments: Array.isArray(post.attached_documents) ? post.attached_documents : [],
+          attachedVideos: Array.isArray(post.attached_videos) ? post.attached_videos : [],
+          imageLayouts: (post.image_layouts && typeof post.image_layouts === 'object') ? post.image_layouts : {},
         });
       }
     }
@@ -95,6 +104,10 @@ const PostEditor = () => {
       alert('Please enter content for your post.');
       return;
     }
+    if (formData.images.length < 2) {
+      alert('Please select at least 2 images before saving or submitting your post.');
+      return;
+    }
 
     setSaving(true);
 
@@ -110,6 +123,10 @@ const PostEditor = () => {
       is_pinned: false,
       pdf_url: formData.pdfUrl || null,
       event_date: formData.eventDate || null,
+      preview_image: formData.previewImage || null,
+      attached_documents: formData.attachedDocuments,
+      attached_videos: formData.attachedVideos,
+      image_layouts: formData.imageLayouts,
     };
 
     try {
@@ -310,6 +327,28 @@ const PostEditor = () => {
         .poe-info-row:last-child { border-bottom: none; }
         .poe-info-key { color: rgba(168,204,232,0.3); }
         .poe-info-val { color: rgba(168,204,232,0.7); font-weight: 500; }
+
+        /* Preview image */
+        .poe-img-wrap { position: relative; border-radius: 6px; overflow: hidden; border: 2px solid transparent; cursor: pointer; transition: border-color 0.15s; }
+        .poe-img-wrap.selected { border-color: #2a6099; }
+        .poe-img-wrap:hover:not(.selected) { border-color: rgba(168,204,232,0.2); }
+        .poe-img-wrap img { width: 100%; height: 54px; object-fit: cover; display: block; }
+        .poe-img-badge { position: absolute; top: 2px; left: 2px; background: #f59e0b; border-radius: 3px; font-size: 9px; font-weight: 700; color: #1a1a1a; padding: 1px 4px; }
+        .poe-img-preview-btn { position: absolute; bottom: 2px; right: 2px; background: rgba(0,0,0,0.65); border: none; border-radius: 3px; color: #f59e0b; font-size: 9px; cursor: pointer; padding: 1px 5px; font-family: 'Inter', sans-serif; }
+        .poe-img-preview-btn:hover { background: rgba(245,158,11,0.25); }
+
+        /* Attached docs/videos list */
+        .poe-attach-list { display: flex; flex-direction: column; gap: 6px; max-height: 160px; overflow-y: auto; }
+        .poe-attach-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 7px; cursor: pointer; border: 1px solid rgba(168,204,232,0.08); transition: all 0.13s; font-size: 12px; color: var(--theme-text-muted); }
+        .poe-attach-item.selected { border-color: rgba(42,96,153,0.4); background: rgba(42,96,153,0.08); color: #a8cce8; }
+        .poe-attach-item:hover:not(.selected) { background: rgba(168,204,232,0.04); }
+
+        /* Image layout controls */
+        .poe-layout-row { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+        .poe-layout-btn { font-size: 9px; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(168,204,232,0.12); background: none; color: rgba(168,204,232,0.4); cursor: pointer; font-family: 'Inter', sans-serif; transition: all 0.12s; }
+        .poe-layout-btn.active { background: rgba(42,96,153,0.3); border-color: rgba(42,96,153,0.5); color: #a8cce8; }
+        .poe-layout-btn:hover:not(.active) { background: rgba(168,204,232,0.06); color: rgba(168,204,232,0.7); }
+        .poe-img-outer { margin-bottom: 4px; }
       `}</style>
 
       <div className="poe-root">
@@ -444,12 +483,12 @@ const PostEditor = () => {
                       <button type="button" onClick={() => setFormData(prev => ({ ...prev, pdfUrl: '' }))} className="poe-doc-remove">Remove</button>
                     </div>
                   ) : null}
-                  {documentFiles.length > 0 ? (
+                  {approvedDocuments.length > 0 ? (
                     <div className="poe-doc-list">
                       <div style={{ fontSize: 11, color: 'rgba(168,204,232,0.3)', padding: '8px 14px', background: 'rgba(168,204,232,0.03)', borderBottom: '1px solid rgba(168,204,232,0.06)' }}>
                         Select from storage:
                       </div>
-                      {documentFiles.map(doc => (
+                      {approvedDocuments.map(doc => (
                         <div
                           key={doc.id}
                           onClick={() => setFormData(prev => ({ ...prev, pdfUrl: doc.url }))}
@@ -501,26 +540,132 @@ const PostEditor = () => {
           <div>
             <div className="poe-card">
               <div className="poe-sidebar-title">Select Images</div>
-              <div className="poe-sidebar-sub">Choose images from the media library</div>
+              <div className="poe-sidebar-sub">
+                Click to include · ★ to set preview
+                {formData.images.length > 0 && formData.images.length < 2 && (
+                  <span style={{ display: 'block', color: '#f87171', marginTop: 4, fontSize: 11 }}>
+                    ⚠ Minimum 2 images required to submit
+                  </span>
+                )}
+              </div>
               {imageFiles.length > 0 ? (
                 <>
                   <div className="poe-img-grid">
-                    {imageFiles.map(img => (
-                      <div
-                        key={img.id}
-                        onClick={() => handleImageToggle(img.url)}
-                        className={`poe-img-item${formData.images.includes(img.url) ? ' selected' : ''}`}
-                      >
-                        <img src={getFullUrl(img.url)} alt={img.name} />
-                      </div>
-                    ))}
+                    {imageFiles.map(img => {
+                      const isSelected = formData.images.includes(img.url);
+                      const isPreview = formData.previewImage === img.url;
+                      const layout = formData.imageLayouts[img.url] || { position: 'center', size: 'medium' };
+                      const setLayout = (key, val) => setFormData(prev => ({
+                        ...prev,
+                        imageLayouts: { ...prev.imageLayouts, [img.url]: { ...layout, [key]: val } },
+                      }));
+                      return (
+                        <div key={img.id || img.url} className="poe-img-outer">
+                          <div
+                            className={`poe-img-wrap${isSelected ? ' selected' : ''}`}
+                            onClick={() => handleImageToggle(img.url)}
+                          >
+                            <img src={getFullUrl(img.url)} alt={img.name} />
+                            {isPreview && <span className="poe-img-badge">★</span>}
+                            {isSelected && (
+                              <button type="button" className="poe-img-preview-btn"
+                                onClick={e => { e.stopPropagation(); setFormData(prev => ({ ...prev, previewImage: isPreview ? '' : img.url })); }}
+                                title={isPreview ? 'Remove preview' : 'Set as preview'}
+                              >{isPreview ? '✕' : '★'}</button>
+                            )}
+                          </div>
+                          {isSelected && (
+                            <>
+                              <div className="poe-layout-row">
+                                {['left','center','right'].map(pos => (
+                                  <button key={pos} type="button"
+                                    className={`poe-layout-btn${layout.position === pos ? ' active' : ''}`}
+                                    onClick={() => setLayout('position', pos)}
+                                  >{pos[0].toUpperCase()}</button>
+                                ))}
+                              </div>
+                              <div className="poe-layout-row">
+                                {['small','medium','full'].map(sz => (
+                                  <button key={sz} type="button"
+                                    className={`poe-layout-btn${layout.size === sz ? ' active' : ''}`}
+                                    onClick={() => setLayout('size', sz)}
+                                  >{sz[0].toUpperCase()}</button>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                  {formData.images.length > 0 && (
-                    <div className="poe-img-count">Selected: {formData.images.length} image(s)</div>
-                  )}
+                  <div className="poe-img-count">
+                    {formData.images.length < 2
+                      ? <span style={{ color: '#f87171' }}>⚠ {formData.images.length}/2 images (min 2 required)</span>
+                      : <span style={{ color: '#4ade80' }}>✓ {formData.images.length} image{formData.images.length !== 1 ? 's' : ''} selected</span>
+                    }
+                    {formData.previewImage && <span style={{ color: '#f59e0b', marginLeft: 8 }}>· Preview set</span>}
+                  </div>
                 </>
               ) : (
                 <div className="poe-doc-empty">No images in media library yet.</div>
+              )}
+            </div>
+
+            {/* Documents */}
+            <div className="poe-card">
+              <div className="poe-sidebar-title">Attach Documents</div>
+              {approvedDocuments.length === 0 ? (
+                <div className="poe-doc-empty">No approved documents available.</div>
+              ) : (
+                <div className="poe-attach-list">
+                  {approvedDocuments.map(doc => {
+                    const sel = formData.attachedDocuments.some(d => d.id === doc.id);
+                    return (
+                      <div key={doc.id}
+                        className={`poe-attach-item${sel ? ' selected' : ''}`}
+                        onClick={() => setFormData(prev => ({
+                          ...prev,
+                          attachedDocuments: sel
+                            ? prev.attachedDocuments.filter(d => d.id !== doc.id)
+                            : [...prev.attachedDocuments, { id: doc.id, name: doc.name || doc.original_name, url: doc.url, type: doc.type }]
+                        }))}
+                      >
+                        <span>📄</span>
+                        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.name || doc.original_name}</span>
+                        {sel && <span style={{ color: '#4ade80' }}>✓</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Video Links */}
+            <div className="poe-card">
+              <div className="poe-sidebar-title">Embed Videos</div>
+              {approvedVideos.length === 0 ? (
+                <div className="poe-doc-empty">No approved video links available.</div>
+              ) : (
+                <div className="poe-attach-list">
+                  {approvedVideos.map(vid => {
+                    const sel = formData.attachedVideos.some(v => v.id === vid.id);
+                    return (
+                      <div key={vid.id}
+                        className={`poe-attach-item${sel ? ' selected' : ''}`}
+                        onClick={() => setFormData(prev => ({
+                          ...prev,
+                          attachedVideos: sel
+                            ? prev.attachedVideos.filter(v => v.id !== vid.id)
+                            : [...prev.attachedVideos, { id: vid.id, title: vid.title, url: vid.url, platform: vid.platform, thumbnail: vid.thumbnail }]
+                        }))}
+                      >
+                        <span>🎬</span>
+                        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{vid.title}</span>
+                        {sel && <span style={{ color: '#4ade80' }}>✓</span>}
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
 

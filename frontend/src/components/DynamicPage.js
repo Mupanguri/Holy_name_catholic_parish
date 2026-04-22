@@ -1,34 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
 import { getFullUrl } from '../services/api';
+import API_BASE_URL from '../services/api';
 import ComingSoon from './ComingSoon';
 
-const DynamicPage = () => {
-  const { slug } = useParams();
+// Accepts a `path` prop (full URL path, e.g. "communities/youth-guilds/agnes-alois/day-of-prayer")
+// Falls back to slug-based lookup if path not provided
+const DynamicPage = ({ slug, path }) => {
   const [page, setPage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const lookup = path || slug;
+
   useEffect(() => {
     const fetchPage = async () => {
       try {
-        const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
-        const response = await fetch(`${API_BASE_URL}/api/pages/slug/${slug}`);
+        // Use by-path endpoint for full-path lookups; falls back to slug endpoint
+        const url = path
+          ? `${API_BASE_URL}/api/pages/by-path?path=${encodeURIComponent(path)}`
+          : `${API_BASE_URL}/api/pages/slug/${slug}`;
+        const response = await fetch(url);
 
         if (!response.ok) {
           throw new Error('Page not found');
         }
 
         const data = await response.json();
-
-        // Allow pages that are live OR visible
-        // Pages with status 'draft', 'pending', or 'rejected' AND not visible should not be accessible
-        if (data.status !== 'live' && data.status !== 'published' && data.visible !== true) {
-          setError('Page is not available');
-          setPage(null);
-          setLoading(false);
-          return;
-        }
 
         setPage(data);
       } catch (err) {
@@ -39,7 +36,7 @@ const DynamicPage = () => {
     };
 
     fetchPage();
-  }, [slug]);
+  }, [lookup]);
 
   if (loading) {
     return (
@@ -58,61 +55,88 @@ const DynamicPage = () => {
 
   if (error || !page) {
     return (
-      <div className="hn-parchment-page">
-        <div className="max-w-6xl mx-auto px-4 py-8">
-          <div className="hn-parchment-container">
-            <div className="hn-parchment-bar"></div>
-            <div className="relative p-6">
-              <ComingSoon
-                title="Page Not Available"
-                message={
-                  error ||
-                  'This page is currently not accessible. It may be in draft mode or pending approval.'
-                }
-              />
-            </div>
-          </div>
-        </div>
-      </div>
+      <ComingSoon
+        title="Page Not Available"
+        message={
+          error ||
+          'This page is currently not accessible. It may be in draft mode or pending approval.'
+        }
+      />
     );
   }
 
-  // Check if page is visible
-  const isLive = page.status === 'live' || page.visible === true;
-  if (!isLive) {
+  // Page under construction: currently in review (pending)
+  if (page.status === 'pending') {
     return (
-      <div className="hn-parchment-page">
-        <div className="max-w-6xl mx-auto px-4 py-8">
-          <div className="hn-parchment-container">
-            <div className="hn-parchment-bar"></div>
-            <div className="relative p-6">
-              <ComingSoon title={page.title} />
-            </div>
-          </div>
-        </div>
-      </div>
+      <ComingSoon
+        title={page.title}
+        message="This page is currently under review and will be available soon."
+      />
     );
   }
 
-  // Parse content (sections format)
-  let sections = [];
-  try {
-    if (page.content) {
-      sections = JSON.parse(page.content);
-    }
-  } catch (e) {
-    // If not JSON, content might be plain text
-    sections = [];
+  // Check if page is visible/live
+  const isLive = page.status === 'live' || page.status === 'published' || page.visible === true;
+  if (!isLive) {
+    return <ComingSoon title={page.title} />;
   }
 
-  // Filter out sections with empty data
-  const hasContent = sections.some(s => {
-    if (!s.data) return false;
-    return Object.values(s.data).some(v => v && v.toString().trim());
-  });
+  // Parse content — handles sections array, plain object, or plain text
+  let parsed = null;
+  try {
+    if (page.content) parsed = JSON.parse(page.content);
+  } catch (e) {
+    parsed = page.content; // plain text fallback
+  }
 
-  // If no sections but there's content, display as plain content
-  const hasPlainContent = !sections.length && page.content && page.content.trim();
+  const isSectionsArray = Array.isArray(parsed) && parsed.length > 0;
+  const isStructuredObject = parsed && typeof parsed === 'object' && !Array.isArray(parsed);
+  const isPlainText = typeof parsed === 'string' && parsed.trim();
+
+  const renderFieldValue = (fieldId, value) => {
+    if (!value && value !== 0) return null;
+    const strVal = value.toString().trim();
+    if (!strVal) return null;
+
+    if (typeof value === 'string' && (value.startsWith('http') || value.startsWith('/uploads/') || value.startsWith('/images/'))) {
+      return (
+        <div key={fieldId} className="mb-4">
+          <img src={getFullUrl(value)} alt={fieldId} className="max-w-full h-auto rounded-lg shadow-md" onError={e => (e.target.style.display = 'none')} />
+        </div>
+      );
+    }
+    if (Array.isArray(value)) {
+      return (
+        <ul key={fieldId} className="list-disc pl-5 mb-3 text-gray-700">
+          {value.map((item, i) => (
+            <li key={i}>{typeof item === 'object' ? JSON.stringify(item) : String(item)}</li>
+          ))}
+        </ul>
+      );
+    }
+    if (typeof value === 'object') {
+      return (
+        <div key={fieldId} className="mb-3 pl-4 border-l-2 border-gray-300">
+          {Object.entries(value).map(([k, v]) => renderFieldValue(k, v))}
+        </div>
+      );
+    }
+    const tag = fieldId === 'heading' ? 'h2' : fieldId === 'subheading' ? 'h3' : 'p';
+    const cls = fieldId === 'heading'
+      ? 'text-xl font-semibold text-[#1B3A6B] mb-2'
+      : fieldId === 'subheading'
+      ? 'text-lg font-medium text-[#1B3A6B] mb-2'
+      : 'whitespace-pre-wrap text-gray-700 mb-2';
+    return React.createElement(tag, { key: fieldId, className: cls }, strVal);
+  };
+
+  const hasContent = isSectionsArray
+    ? parsed.some(s => s.data && Object.values(s.data).some(v => v && v.toString().trim()))
+    : isStructuredObject || isPlainText;
+
+  if (!hasContent) {
+    return <ComingSoon title={page.title} />;
+  }
 
   return (
     <div className="hn-parchment-page">
@@ -122,65 +146,34 @@ const DynamicPage = () => {
           <div className="relative p-6">
             <h1 className="text-3xl font-bold text-[#1B3A6B] mb-6">{page.title}</h1>
 
-            {hasPlainContent && (
+            {isPlainText && (
               <div className="prose max-w-none">
-                <p className="whitespace-pre-wrap">{page.content}</p>
+                <p className="whitespace-pre-wrap text-gray-700">{parsed}</p>
               </div>
             )}
 
-            {sections.length > 0 && hasContent && (
+            {isSectionsArray && (
               <div className="space-y-6">
-                {sections.map((section, index) => {
-                  const sectionTitle = section.title || `Section ${index + 1}`;
+                {parsed.map((section, index) => {
                   const sectionData = section.data || {};
-
-                  // Skip sections with empty data
-                  const hasSectionContent = Object.values(sectionData).some(
-                    v => v && v.toString().trim()
-                  );
+                  const hasSectionContent = Object.values(sectionData).some(v => v && v.toString().trim());
                   if (!hasSectionContent) return null;
-
                   return (
                     <div key={section.id || index} className="border-l-4 border-[#1B3A6B] pl-4">
-                      <h2 className="text-xl font-semibold text-[#1B3A6B] mb-3">{sectionTitle}</h2>
-
-                      {Object.entries(sectionData).map(([fieldId, value]) => {
-                        if (!value || !value.toString().trim()) return null;
-
-                        // Check if it's an image URL
-                        const isImage =
-                          typeof value === 'string' &&
-                          (value.startsWith('http') ||
-                            value.startsWith('/uploads/') ||
-                            value.startsWith('/images/'));
-
-                        if (isImage) {
-                          return (
-                            <div key={fieldId} className="mb-4">
-                              <img
-                                src={getFullUrl(value)}
-                                alt={fieldId}
-                                className="max-w-full h-auto rounded-lg shadow-md"
-                                onError={e => (e.target.style.display = 'none')}
-                              />
-                            </div>
-                          );
-                        }
-
-                        // Regular text content
-                        return (
-                          <div key={fieldId} className="mb-2">
-                            <p className="whitespace-pre-wrap text-gray-700">{value}</p>
-                          </div>
-                        );
-                      })}
+                      {section.title && <h2 className="text-xl font-semibold text-[#1B3A6B] mb-3">{section.title}</h2>}
+                      {Object.entries(sectionData).map(([fieldId, value]) => renderFieldValue(fieldId, value))}
                     </div>
                   );
                 })}
               </div>
             )}
 
-            {!hasPlainContent && !hasContent && <ComingSoon title={page.title} />}
+            {isStructuredObject && (
+              <div className="space-y-4">
+                {Object.entries(parsed).map(([key, value]) => renderFieldValue(key, value))}
+              </div>
+            )}
+
           </div>
         </div>
       </div>

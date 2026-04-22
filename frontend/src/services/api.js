@@ -14,6 +14,16 @@ const getAuthHeaders = () => {
 // Helper to ensure URL is complete (prefix with API_BASE_URL for relative paths)
 export const getFullUrl = url => {
   if (!url) return '';
+  // Block dangerous URI schemes — never safe in href/src attributes
+  const lower = url.toLowerCase().trimStart();
+  if (
+    lower.startsWith('javascript:') ||
+    lower.startsWith('data:') ||
+    lower.startsWith('vbscript:') ||
+    lower.startsWith('blob:')
+  ) {
+    return '';
+  }
   // If already a full URL (http:// or https://), return as-is
   if (url.startsWith('http://') || url.startsWith('https://')) {
     return url;
@@ -93,6 +103,10 @@ export const pagesAPI = {
       },
       body: JSON.stringify(pageData),
     });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to update page' }));
+      throw { response: { data: error } };
+    }
     return response.json();
   },
   delete: async id => {
@@ -117,13 +131,14 @@ export const pagesAPI = {
     }
     return response.json();
   },
-  toggleVisibility: async id => {
+  toggleVisibility: async (id, visible) => {
     const response = await fetch(`${API_BASE_URL}/api/pages/${id}/visibility`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
         ...getAuthHeaders(),
       },
+      body: JSON.stringify({ visible }),
     });
     return response.json();
   },
@@ -201,13 +216,14 @@ export const postsAPI = {
     });
     return response.json();
   },
-  toggleVisibility: async id => {
+  toggleVisibility: async (id, visible) => {
     const response = await fetch(`${API_BASE_URL}/api/posts/${id}/visibility`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
         ...getAuthHeaders(),
       },
+      body: JSON.stringify({ visible }),
     });
     return response.json();
   },
@@ -257,6 +273,33 @@ export const mediaAPI = {
       method: 'DELETE',
       headers: { ...getAuthHeaders() },
     });
+    return response.json();
+  },
+  massUpload: async formData => {
+    const response = await fetch(`${API_BASE_URL}/api/media/mass-upload`, {
+      method: 'POST',
+      headers: { ...getAuthHeaders() },
+      body: formData,
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      let msg = `Server error (${response.status})`;
+      try { msg = JSON.parse(text).error || msg; } catch {}
+      throw new Error(msg);
+    }
+    return response.json();
+  },
+  massApprove: async () => {
+    const response = await fetch(`${API_BASE_URL}/api/admin/mass-approve-media`, {
+      method: 'POST',
+      headers: { ...getAuthHeaders() },
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      let msg = `Server error (${response.status})`;
+      try { msg = JSON.parse(text).error || msg; } catch {}
+      throw new Error(msg);
+    }
     return response.json();
   },
 };
@@ -387,6 +430,10 @@ export const tasksAPI = {
       },
       body: JSON.stringify(taskData),
     });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to update task (${response.status})`);
+    }
     return response.json();
   },
   delete: async id => {
@@ -404,6 +451,10 @@ export const usersAPI = {
     const response = await fetch(`${API_BASE_URL}/api/users`, {
       headers: { ...getAuthHeaders() },
     });
+    if (!response.ok) {
+      // 403 means caller is not super_admin — return empty array, don't throw
+      return [];
+    }
     return response.json();
   },
   create: async userData => {

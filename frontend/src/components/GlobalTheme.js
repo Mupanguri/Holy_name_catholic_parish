@@ -1,11 +1,63 @@
 import React from 'react';
 
 const GlobalTheme = ({ children }) => {
+  React.useEffect(() => {
+    const applyObserver = () => {
+      const cards = document.querySelectorAll('.hn-card, .hn-post-card');
+      cards.forEach(el => {
+        if (!el.classList.contains('hn-card-visible')) {
+          el.classList.add('hn-card-hidden');
+        }
+      });
+      const obs = new IntersectionObserver(
+        entries => entries.forEach(e => {
+          if (e.isIntersecting) {
+            e.target.classList.remove('hn-card-hidden');
+            e.target.classList.add('hn-card-visible');
+            obs.unobserve(e.target);
+          }
+        }),
+        { threshold: 0.08 }
+      );
+      cards.forEach(el => obs.observe(el));
+      return obs;
+    };
+
+    const obs = applyObserver();
+    return () => obs.disconnect();
+  }, []);
+
   return (
     <>
       <style>{`
         /* ── Fonts ── */
         @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+
+        /* ── Page Transition ── */
+        @keyframes hnPageEnter {
+          from { opacity: 0; transform: translateY(14px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .hn-page-enter {
+          animation: hnPageEnter 0.45s cubic-bezier(0.22,1,0.36,1) both;
+        }
+
+        /* ── Tab Content Fade ── */
+        @keyframes hnTabEnter {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .hn-tab-enter {
+          animation: hnTabEnter 0.3s cubic-bezier(0.22,1,0.36,1) both;
+        }
+
+        /* ── Card Scroll Entrance ── */
+        .hn-card-hidden { opacity: 0; transform: translateY(20px); }
+        .hn-card-visible {
+          transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.22,1,0.36,1);
+          opacity: 1 !important;
+          transform: translateY(0) !important;
+        }
         
         :root {
           --parish-blue: #1B3A6B;
@@ -253,11 +305,12 @@ const GlobalTheme = ({ children }) => {
           text-decoration: none;
           box-shadow: 0 2px 8px rgba(27,58,107,0.15);
         }
-        .hn-btn-primary:hover { 
+        .hn-btn-primary:hover {
           background: var(--parish-blue-dark);
           transform: translateY(-2px);
           box-shadow: 0 4px 12px rgba(27,58,107,0.25);
         }
+        .hn-btn-primary:active { transform: scale(0.97); }
 
         /* ── Outline Button ── */
         .hn-btn-outline {
@@ -276,11 +329,12 @@ const GlobalTheme = ({ children }) => {
           text-align: center; 
           text-decoration: none;
         }
-        .hn-btn-outline:hover { 
-          background: var(--parish-blue); 
+        .hn-btn-outline:hover {
+          background: var(--parish-blue);
           color: #fff;
           border-color: var(--parish-blue);
         }
+        .hn-btn-outline:active { transform: scale(0.97); }
 
         /* ── Post Card ── */
         .hn-post-card {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, useParams } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import { CMSProvider } from './context/CMSContext';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeProvider';
@@ -57,6 +57,7 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import DashboardHome from './pages/admin/DashboardHome';
 import PagesManager from './pages/admin/PagesManager';
 import PageEditor from './pages/admin/PageEditor';
+import PageEditorWYSIWYG from './pages/admin/PageEditorWYSIWYG';
 import PostsManager from './pages/admin/PostsManager';
 import PostEditor from './pages/admin/PostEditor';
 import MediaLibrary from './pages/admin/MediaLibrary';
@@ -66,22 +67,30 @@ import AdminNotifications from './pages/admin/AdminNotifications';
 import UsersManager from './pages/admin/UsersManager';
 import { PageWrapper } from './components/PageWrapper';
 import GlobalTheme from './components/GlobalTheme';
+import ComingSoon from './components/ComingSoon';
 
 // Layout component for public pages (with Header/Footer)
-const PublicLayout = ({ children }) => (
-  <>
-    <GlobalTheme />
-    <Header />
-    {children}
-    <Footer />
-    <EventCalendar />
-  </>
-);
+const PublicLayout = ({ children }) => {
+  const location = useLocation();
+  return (
+    <>
+      <GlobalTheme />
+      <Header />
+      <div key={location.pathname} className="hn-page-enter">
+        {children}
+      </div>
+      <Footer />
+      <EventCalendar />
+    </>
+  );
+};
 
-// Wrapper component to get slug from URL params for dynamic pages
+// Wrapper component: passes full URL path to DynamicPage for nested slug lookup
 const DynamicPageWrapper = () => {
-  const { slug } = useParams();
-  return <DynamicPage slug={slug} />;
+  const location = useLocation();
+  // Strip leading slash → "communities/youth-guilds/agnes-alois/day-of-prayer"
+  const path = location.pathname.replace(/^\//, '');
+  return <DynamicPage path={path} />;
 };
 
 function App() {
@@ -108,6 +117,8 @@ function App() {
                 <Route path="pages" element={<PagesManager />} />
                 <Route path="pages/new" element={<PageEditor />} />
                 <Route path="pages/edit/:id" element={<PageEditor />} />
+                <Route path="pages/wysiwyg/new" element={<PageEditorWYSIWYG />} />
+                <Route path="pages/wysiwyg/:id" element={<PageEditorWYSIWYG />} />
                 <Route path="posts" element={<PostsManager />} />
                 <Route path="posts/new" element={<PostEditor />} />
                 <Route path="posts/edit/:id" element={<PostEditor />} />
@@ -135,7 +146,9 @@ function App() {
                 path="/about"
                 element={
                   <PublicLayout>
-                    <About />
+                    <PageWrapper pageSlug="about">
+                      <About />
+                    </PageWrapper>
                   </PublicLayout>
                 }
               />
@@ -144,7 +157,9 @@ function App() {
                 path="/events"
                 element={
                   <PublicLayout>
-                    <Events />
+                    <PageWrapper pageSlug="events">
+                      <Events />
+                    </PageWrapper>
                   </PublicLayout>
                 }
               />
@@ -186,19 +201,12 @@ function App() {
               />
 
               <Route
-                path="/gallery"
-                element={
-                  <PublicLayout>
-                    <GalleryPage />
-                  </PublicLayout>
-                }
-              />
-
-              <Route
                 path="/programs"
                 element={
                   <PublicLayout>
-                    <Programs />
+                    <PageWrapper pageSlug="programs">
+                      <Programs />
+                    </PageWrapper>
                   </PublicLayout>
                 }
               />
@@ -210,7 +218,9 @@ function App() {
                 path="/communities"
                 element={
                   <PublicLayout>
-                    <CommunitiesPage />
+                    <PageWrapper pageSlug="communities">
+                      <CommunitiesPage />
+                    </PageWrapper>
                   </PublicLayout>
                 }
               />
@@ -220,7 +230,7 @@ function App() {
                 path="/communities/sections/parachute-regiment"
                 element={
                   <PublicLayout>
-                    <PageWrapper pageSlug="parachute-regiment">
+                    <PageWrapper pageSlug="communities/sections/parachute-regiment">
                       <ParachuteRegiment />
                     </PageWrapper>
                   </PublicLayout>
@@ -231,7 +241,7 @@ function App() {
                 path="/communities/sections/avondale-west"
                 element={
                   <PublicLayout>
-                    <PageWrapper pageSlug="avondale-west">
+                    <PageWrapper pageSlug="communities/sections/avondale-west">
                       <AvondaleWestSection />
                     </PageWrapper>
                   </PublicLayout>
@@ -242,7 +252,7 @@ function App() {
                 path="/communities/sections/bloomingdale"
                 element={
                   <PublicLayout>
-                    <PageWrapper pageSlug="bloomingdale">
+                    <PageWrapper pageSlug="communities/sections/bloomingdale">
                       <BloomingdaleSection />
                     </PageWrapper>
                   </PublicLayout>
@@ -253,7 +263,7 @@ function App() {
                 path="/communities/sections/meyrick-park"
                 element={
                   <PublicLayout>
-                    <PageWrapper pageSlug="meyrick-park">
+                    <PageWrapper pageSlug="communities/sections/meyrick-park">
                       <MeyrickParkSection />
                     </PageWrapper>
                   </PublicLayout>
@@ -264,7 +274,7 @@ function App() {
                 path="/communities/sections/cotswold-hills"
                 element={
                   <PublicLayout>
-                    <PageWrapper pageSlug="cotswold-hills">
+                    <PageWrapper pageSlug="communities/sections/cotswold-hills">
                       <CotswoldHillsSection />
                     </PageWrapper>
                   </PublicLayout>
@@ -275,7 +285,7 @@ function App() {
                 path="/communities/sections/mabelreign-central"
                 element={
                   <PublicLayout>
-                    <PageWrapper pageSlug="mabelreign-central">
+                    <PageWrapper pageSlug="communities/sections/mabelreign-central">
                       <MabelreignCentralSection />
                     </PageWrapper>
                   </PublicLayout>
@@ -286,7 +296,7 @@ function App() {
                 path="/communities/sections/haig-park"
                 element={
                   <PublicLayout>
-                    <PageWrapper pageSlug="haig-park">
+                    <PageWrapper pageSlug="communities/sections/haig-park">
                       <HaigParkSection />
                     </PageWrapper>
                   </PublicLayout>
@@ -298,7 +308,7 @@ function App() {
                 path="/communities/choir/english"
                 element={
                   <PublicLayout>
-                    <PageWrapper pageSlug="choir">
+                    <PageWrapper pageSlug="communities/choir/english">
                       <EnglishChoir />
                     </PageWrapper>
                   </PublicLayout>
@@ -309,7 +319,7 @@ function App() {
                 path="/communities/choir/shona"
                 element={
                   <PublicLayout>
-                    <PageWrapper pageSlug="choirshona">
+                    <PageWrapper pageSlug="communities/choir/shona">
                       <ChoirShona />
                     </PageWrapper>
                   </PublicLayout>
@@ -321,7 +331,7 @@ function App() {
                 path="/communities/committees/main-gov"
                 element={
                   <PublicLayout>
-                    <PageWrapper pageSlug="main-gov">
+                    <PageWrapper pageSlug="communities/committees/main-gov">
                       <MainGov />
                     </PageWrapper>
                   </PublicLayout>
@@ -362,7 +372,7 @@ function App() {
                 path="/communities/committees/family-apostolate"
                 element={
                   <PublicLayout>
-                    <PageWrapper pageSlug="family-apo">
+                    <PageWrapper pageSlug="communities/committees/family-apostolate">
                       <FamilyApo />
                     </PageWrapper>
                   </PublicLayout>
@@ -374,7 +384,7 @@ function App() {
                 path="/communities/support-teams/soccom"
                 element={
                   <PublicLayout>
-                    <PageWrapper pageSlug="soccom">
+                    <PageWrapper pageSlug="communities/support-teams/soccom">
                       <SoccomPage />
                     </PageWrapper>
                   </PublicLayout>
@@ -385,7 +395,7 @@ function App() {
                 path="/communities/support-teams/catechesis"
                 element={
                   <PublicLayout>
-                    <PageWrapper pageSlug="catechesis">
+                    <PageWrapper pageSlug="communities/support-teams/catechesis">
                       <CatechesisPage />
                     </PageWrapper>
                   </PublicLayout>
@@ -396,7 +406,7 @@ function App() {
                 path="/communities/support-teams/ccr"
                 element={
                   <PublicLayout>
-                    <PageWrapper pageSlug="ccr">
+                    <PageWrapper pageSlug="communities/support-teams/ccr">
                       <CCRPage />
                     </PageWrapper>
                   </PublicLayout>
@@ -407,7 +417,7 @@ function App() {
                 path="/events/special-events"
                 element={
                   <PublicLayout>
-                    <PageWrapper pageSlug="special-events">
+                    <PageWrapper pageSlug="events/special-events">
                       <SpecialEvents />
                     </PageWrapper>
                   </PublicLayout>
@@ -419,7 +429,7 @@ function App() {
                 path="/communities/adult-guilds/chemwoyo"
                 element={
                   <PublicLayout>
-                    <PageWrapper pageSlug="chemwoyo">
+                    <PageWrapper pageSlug="communities/adult-guilds/chemwoyo">
                       <Chemwoyo />
                     </PageWrapper>
                   </PublicLayout>
@@ -460,7 +470,7 @@ function App() {
                 path="/communities/adult-guilds/chamariya"
                 element={
                   <PublicLayout>
-                    <PageWrapper pageSlug="chamariya">
+                    <PageWrapper pageSlug="communities/adult-guilds/chamariya">
                       <ChaMariya />
                     </PageWrapper>
                   </PublicLayout>
@@ -472,7 +482,7 @@ function App() {
                 path="/communities/youth-guilds/musande"
                 element={
                   <PublicLayout>
-                    <PageWrapper pageSlug="moyo-musande">
+                    <PageWrapper pageSlug="communities/youth-guilds/musande">
                       <MoyoMusandeGuild />
                     </PageWrapper>
                   </PublicLayout>
@@ -483,7 +493,7 @@ function App() {
                 path="/communities/youth-guilds/agnes-alois"
                 element={
                   <PublicLayout>
-                    <PageWrapper pageSlug="agnes-alois">
+                    <PageWrapper pageSlug="communities/youth-guilds/agnes-alois">
                       <AgnesAloisGuild />
                     </PageWrapper>
                   </PublicLayout>
@@ -525,14 +535,35 @@ function App() {
                 path="/international-outreach"
                 element={
                   <PublicLayout>
-                    <InternationalOutreach />
+                    <PageWrapper pageSlug="international-outreach">
+                      <InternationalOutreach />
+                    </PageWrapper>
                   </PublicLayout>
                 }
               />
 
               {/* ===================== CATCH-ALL DYNAMIC PAGE ROUTE ===================== */}
+              {/* 3-level: /communities/youth-guilds/agnes-alois */}
               <Route
                 path="/communities/:category/:slug"
+                element={
+                  <PublicLayout>
+                    <DynamicPageWrapper />
+                  </PublicLayout>
+                }
+              />
+              {/* 4-level: /communities/youth-guilds/agnes-alois/day-of-prayer */}
+              <Route
+                path="/communities/:category/:guild/:leaf"
+                element={
+                  <PublicLayout>
+                    <DynamicPageWrapper />
+                  </PublicLayout>
+                }
+              />
+              {/* 5-level: /communities/youth-guilds/agnes-alois/sub-guild/leaf */}
+              <Route
+                path="/communities/:category/:guild/:subguild/:leaf"
                 element={
                   <PublicLayout>
                     <DynamicPageWrapper />
@@ -583,18 +614,7 @@ function App() {
                 path="*"
                 element={
                   <PublicLayout>
-                    <div className="min-h-screen flex items-center justify-center bg-parchment-light">
-                      <div className="text-center">
-                        <h1 className="text-6xl font-serif text-parish-primary mb-4">404</h1>
-                        <p className="text-xl text-gray-600 mb-8">Page not found</p>
-                        <a
-                          href="/HolyName/"
-                          className="inline-block bg-parish-primary text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition"
-                        >
-                          Return Home
-                        </a>
-                      </div>
-                    </div>
+                    <ComingSoon title="Page Not Found" message="The page you're looking for doesn't exist." />
                   </PublicLayout>
                 }
               />

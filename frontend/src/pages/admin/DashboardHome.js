@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
@@ -9,8 +9,10 @@ const DashboardHome = () => {
     isSuperAdmin,
     getLivePages,
     getDraftPages,
+    getAllPages,
     getLivePosts,
     getDraftPosts,
+    getAllPosts,
     getAllMedia,
     getPendingSubmissions,
     getMyTasks,
@@ -18,12 +20,21 @@ const DashboardHome = () => {
     getUnreadNotifications,
     getAllVideoLinks,
     users,
+    loadAllData,
   } = useAuth();
+
+  // Refresh data on mount so stats are always current
+  useEffect(() => {
+    loadAllData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const livePages = getLivePages();
   const draftPages = getDraftPages();
+  const allPages = getAllPages ? getAllPages() : [];
   const livePosts = getLivePosts();
   const draftPosts = getDraftPosts();
+  const allPosts = getAllPosts ? getAllPosts() : [];
   const media = getAllMedia();
   const pendingSubmissions = getPendingSubmissions();
   const myTasks = getMyTasks();
@@ -44,10 +55,34 @@ const DashboardHome = () => {
         icon: '◈',
       },
       {
-        label: 'My Tasks',
-        value: myTasks.length,
+        label: 'Live Pages',
+        value: livePages.length,
+        accent: '#16a34a',
+        accentBg: 'rgba(22,163,74,0.08)',
+        link: '/admin/pages',
+        icon: '◫',
+      },
+      {
+        label: 'Live Posts',
+        value: livePosts.length,
         accent: '#2a6099',
         accentBg: 'rgba(42,96,153,0.08)',
+        link: '/admin/posts',
+        icon: '≡',
+      },
+      {
+        label: 'Total Pages',
+        value: allPages.length,
+        accent: '#0891b2',
+        accentBg: 'rgba(8,145,178,0.08)',
+        link: '/admin/pages',
+        icon: '◫',
+      },
+      {
+        label: 'My Tasks',
+        value: myTasks.length,
+        accent: '#ea580c',
+        accentBg: 'rgba(234,88,12,0.08)',
         link: '/admin/tasks',
         icon: '◎',
       },

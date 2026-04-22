@@ -3,6 +3,67 @@ import { useAuth } from '../context/AuthContext';
 import GlobalTheme from '../components/GlobalTheme';
 import { getFullUrl } from '../services/api';
 
+const isPdf = name => (name || '').toLowerCase().endsWith('.pdf');
+
+const getFileTypeIcon = name => {
+  const ext = (name || '').split('.').pop().toLowerCase();
+  const types = {
+    pdf:  { bg: '#F40F02', letter: 'PDF', size: 13 },
+    doc:  { bg: '#2B579A', letter: 'W',   size: 28 },
+    docx: { bg: '#2B579A', letter: 'W',   size: 28 },
+    ppt:  { bg: '#C43E1C', letter: 'P',   size: 28 },
+    pptx: { bg: '#C43E1C', letter: 'P',   size: 28 },
+    xls:  { bg: '#217346', letter: 'X',   size: 28 },
+    xlsx: { bg: '#217346', letter: 'X',   size: 28 },
+    txt:  { bg: '#6b7280', letter: 'TXT', size: 13 },
+  };
+  const { bg = '#6b7280', letter = ext.toUpperCase() || 'FILE', size = 13 } = types[ext] || {};
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+      <div style={{
+        width: 64, height: 76, background: bg, borderRadius: 6,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        boxShadow: '0 4px 16px rgba(0,0,0,0.25)', position: 'relative',
+      }}>
+        <div style={{
+          position: 'absolute', top: 0, right: 0,
+          width: 18, height: 18,
+          background: 'rgba(255,255,255,0.22)', borderBottomLeftRadius: 6,
+        }} />
+        <span style={{ color: '#fff', fontSize: size, fontWeight: 700, letterSpacing: '0.03em', fontFamily: 'Inter, sans-serif' }}>
+          {letter}
+        </span>
+      </div>
+    </div>
+  );
+};
+
+const PdfThumbnail = ({ url, name }) => {
+  const [failed, setFailed] = useState(false);
+  if (failed) return (
+    <div className="w-full h-full flex flex-col items-center justify-center p-4 bg-gray-50">
+      {getFileTypeIcon(name)}
+    </div>
+  );
+  return (
+    <div style={{ width: '100%', height: '100%', overflow: 'hidden', position: 'relative', background: '#f8f8f8' }}>
+      <iframe
+        src={`${url}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
+        style={{
+          width: 794,
+          height: 1123,
+          transform: 'scale(0.22)',
+          transformOrigin: 'top left',
+          pointerEvents: 'none',
+          border: 'none',
+        }}
+        title={name}
+        onError={() => setFailed(true)}
+      />
+    </div>
+  );
+};
+
 const Library = () => {
   const { getAllMedia, getMediaByCategory, getApprovedVideoLinks } = useAuth();
   const [activeCategory, setActiveCategory] = useState('all');
@@ -34,16 +95,10 @@ const Library = () => {
 
   const getTypeIcon = type => {
     switch (type) {
-      case 'image':
-        return '🖼️';
-      case 'document':
-        return '📄';
+      case 'image': return '🖼️';
       case 'video':
-        return '🎬';
-      case 'video-link':
-        return '🎬';
-      default:
-        return '📁';
+      case 'video-link': return '🎬';
+      default: return '📁';
     }
   };
 
@@ -127,7 +182,32 @@ const Library = () => {
             >
               <div className="aspect-square relative bg-gray-100">
                 {item.type === 'image' ? (
-                  <img src={getFullUrl(item.url)} alt={item.name} className="w-full h-full object-cover" />
+                  <img
+                    src={getFullUrl(item.url)}
+                    alt={item.name}
+                    className="w-full h-full object-cover"
+                    onError={e => {
+                      e.target.style.display = 'none';
+                      e.target.nextSibling && (e.target.nextSibling.style.display = 'flex');
+                    }}
+                  />
+                ) : item.type === 'document' && item.cover_image ? (
+                  <img
+                    src={getFullUrl(item.cover_image)}
+                    alt={item.name}
+                    className="w-full h-full object-cover"
+                    onError={e => {
+                      e.target.style.display = 'none';
+                      e.target.nextSibling && (e.target.nextSibling.style.display = 'flex');
+                    }}
+                  />
+                ) : item.type === 'document' && isPdf(item.name) ? (
+                  <PdfThumbnail url={getFullUrl(item.url)} name={item.name} />
+                ) : item.type === 'document' ? (
+                  <div className="w-full h-full flex flex-col items-center justify-center p-4 bg-gray-50">
+                    {getFileTypeIcon(item.name)}
+                    <p className="text-xs text-center text-gray-500 mt-3 truncate w-full px-2">{item.name}</p>
+                  </div>
                 ) : item.type === 'video-link' && item.thumbnail ? (
                   <img src={item.thumbnail} alt={item.name} className="w-full h-full object-cover" />
                 ) : item.type === 'video-link' ? (

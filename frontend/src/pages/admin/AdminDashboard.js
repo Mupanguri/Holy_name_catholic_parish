@@ -52,24 +52,24 @@ const AdminDashboard = () => {
     light: {
       bg: '#ffffff',
       bgSecondary: '#f8fafc',
-      text: '#000000',
-      textMuted: '#333333',
-      border: '#000000',
-      sidebar: '#ffffff',
-      sidebarBorder: '#000000',
+      text: '#1a202c',
+      textMuted: '#4a5568',
+      border: '#e2e8f0',
+      sidebar: '#f8fafc',
+      sidebarBorder: '#e2e8f0',
       header: '#ffffff',
       accent: '#1B3A6B',
       gold: '#C9A84C',
     },
     dim: {
-      bg: '#2d3748',
-      bgSecondary: '#1a202c',
-      text: '#ffffff',
-      textMuted: '#cbd5e0',
-      border: '#4a5568',
-      sidebar: '#1a202c',
-      sidebarBorder: '#4a5568',
-      header: '#2d3748',
+      bg: '#12192a',
+      bgSecondary: '#0a1019',
+      text: '#e8edf4',
+      textMuted: '#a0aec0',
+      border: 'rgba(168,204,232,0.1)',
+      sidebar: '#0a1019',
+      sidebarBorder: 'rgba(168,204,232,0.08)',
+      header: 'rgba(10,16,25,0.9)',
       accent: '#63b3ed',
       gold: '#f6e05e',
     },
@@ -305,20 +305,15 @@ const AdminDashboard = () => {
         *, *::before, *::after { box-sizing: border-box; }
 
         /* Global theme propagation */
-        .ad-root, .ad-root * {
-          color: var(--theme-text) !important;
-          border-color: var(--theme-border) !important;
+        .ad-root {
+          color: var(--theme-text);
         }
         .ad-root input, .ad-root textarea, .ad-root select {
           background: var(--theme-bg-secondary) !important;
           color: var(--theme-text) !important;
+          border-color: var(--theme-border) !important;
         }
         .ad-root table, .ad-root thead, .ad-root tbody, .ad-root tr, .ad-root th, .ad-root td {
-          background: var(--theme-bg-secondary) !important;
-          color: var(--theme-text) !important;
-        }
-        .ad-root a { color: var(--theme-accent) !important; }
-        .ad-root button {
           background: var(--theme-bg-secondary) !important;
           color: var(--theme-text) !important;
         }
@@ -548,11 +543,6 @@ const AdminDashboard = () => {
         }
         .ad-main a {
           color: var(--theme-accent) !important;
-        }
-        .ad-main button {
-          background: var(--theme-bg-secondary) !important;
-          color: var(--theme-text) !important;
-          border-color: var(--theme-border) !important;
         }
 
         .ad-header {

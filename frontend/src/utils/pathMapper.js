@@ -139,16 +139,16 @@ export const getCorrectPath = (path) => {
   
   // Check if we have a mapping for this path
   if (pathMappings[normalizedPath]) {
-    return `/HolyName/${pathMappings[normalizedPath]}`;
+    return `/${pathMappings[normalizedPath]}`;
   }
-  
+
   // Also check with leading slash
   if (pathMappings[`/${normalizedPath}`]) {
-    return `/HolyName/${pathMappings[`/${normalizedPath}`].slice(1)}`;
+    return `/${pathMappings[`/${normalizedPath}`].slice(1)}`;
   }
-  
+
   // If no mapping found, assume path is already correct
-  return `/HolyName/${normalizedPath}`;
+  return `/${normalizedPath}`;
 };
 
 /**

@@ -116,7 +116,7 @@ const ZONE_PATHS = {
 };
 
 // ─── Ambient Falling Leaves ───────────────────────────────────────────────────
-const LEAF_COLORS = ['#c8a84b', '#8b6914', '#6b8e23', '#a0522d', '#d4a017', '#5a7a5a'];
+const LEAF_COLORS = ['#c8a84b', '#8b6914', '#a0522d', '#d4a017', '#b8860b', '#cd853f'];
 
 function FallingLeaves() {
   const leaves = Array.from({ length: 18 }, (_, i) => ({
@@ -144,7 +144,7 @@ function FallingLeaves() {
           0%   { transform: translateY(-30px) translateX(0) rotate(0deg); opacity: 0; }
           8%   { opacity: 0.9; }
           85%  { opacity: 0.7; }
-          100% { transform: translateY(920px) translateX(var(--pt-drift)) rotate(600deg); opacity: 0; }
+          100% { transform: translateY(calc(100vh + 80px)) translateX(var(--pt-drift)) rotate(600deg); opacity: 0; }
         }
         .pt-leaf {
           animation: ptLeafFall var(--duration) var(--delay) infinite linear;
@@ -191,10 +191,19 @@ function SwayingVines() {
   };
 
   const [time, setTime] = useState(0);
+  const frameCountRef = useRef(0);
 
   useEffect(() => {
-    const interval = setInterval(() => setTime(t => t + 0.02), 50);
-    return () => clearInterval(interval);
+    let raf;
+    const tick = () => {
+      frameCountRef.current += 1;
+      if (frameCountRef.current % 3 === 0 && !document.hidden) {
+        setTime(t => t + 0.02);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, []);
 
   const vines = Object.entries(VINE_POINTS).map(([zoneId, point], i) => {
@@ -242,13 +251,52 @@ function SwayingVines() {
 }
 
 // ─── Pill Buttons at Edges ───────────────────────────────────────────────────
-function EdgePills({ zones, activeZone, onZoneClick }) {
+function EdgePills({ zones, activeZone, onZoneClick, isMobile }) {
   const leftZones = zones.slice(0, 3);
   const rightZones = zones.slice(3, 6);
 
+  const pillStyle = (id, cfg) => ({
+    background: cfg.color,
+    color: '#fff',
+    border: 'none',
+    borderRadius: '20px',
+    padding: isMobile ? '7px 14px' : '8px 16px',
+    fontSize: isMobile ? '10px' : '11px',
+    fontWeight: '600',
+    fontFamily: 'Cinzel, Georgia, serif',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    boxShadow: activeZone === id ? `0 0 15px ${cfg.color}80` : '2px 3px 6px rgba(0,0,0,0.3)',
+    transform: activeZone === id ? 'scale(1.05)' : 'scale(1)',
+    transition: 'all 0.2s ease',
+    flexShrink: 0,
+  });
+
+  if (isMobile) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'row',
+          gap: '8px',
+          overflowX: 'auto',
+          padding: '12px 8px',
+          WebkitOverflowScrolling: 'touch',
+          scrollbarWidth: 'none',
+        }}
+      >
+        {zones.map(([id, cfg]) => (
+          <button key={id} onClick={() => onZoneClick(id)} style={pillStyle(id, cfg)}>
+            {cfg.icon} {cfg.label}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <>
-      {/* Left side pills - moved down away from leaves */}
+      {/* Left side pills */}
       <div
         style={{
           position: 'absolute',
@@ -262,33 +310,14 @@ function EdgePills({ zones, activeZone, onZoneClick }) {
           padding: '10px',
         }}
       >
-        {leftZones.map(([id, cfg], i) => (
-          <button
-            key={id}
-            onClick={() => onZoneClick(id)}
-            style={{
-              background: cfg.color,
-              color: '#fff',
-              border: 'none',
-              borderRadius: '20px',
-              padding: '8px 16px',
-              fontSize: '11px',
-              fontWeight: '600',
-              fontFamily: 'Cinzel, Georgia, serif',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              boxShadow:
-                activeZone === id ? `0 0 15px ${cfg.color}80` : '2px 3px 6px rgba(0,0,0,0.3)',
-              transform: activeZone === id ? 'scale(1.05)' : 'scale(1)',
-              transition: 'all 0.2s ease',
-            }}
-          >
+        {leftZones.map(([id, cfg]) => (
+          <button key={id} onClick={() => onZoneClick(id)} style={pillStyle(id, cfg)}>
             {cfg.icon} {cfg.label}
           </button>
         ))}
       </div>
 
-      {/* Right side pills - moved down away from leaves */}
+      {/* Right side pills */}
       <div
         style={{
           position: 'absolute',
@@ -302,27 +331,8 @@ function EdgePills({ zones, activeZone, onZoneClick }) {
           padding: '10px',
         }}
       >
-        {rightZones.map(([id, cfg], i) => (
-          <button
-            key={id}
-            onClick={() => onZoneClick(id)}
-            style={{
-              background: cfg.color,
-              color: '#fff',
-              border: 'none',
-              borderRadius: '20px',
-              padding: '8px 16px',
-              fontSize: '11px',
-              fontWeight: '600',
-              fontFamily: 'Cinzel, Georgia, serif',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              boxShadow:
-                activeZone === id ? `0 0 15px ${cfg.color}80` : '2px 3px 6px rgba(0,0,0,0.3)',
-              transform: activeZone === id ? 'scale(1.05)' : 'scale(1)',
-              transition: 'all 0.2s ease',
-            }}
-          >
+        {rightZones.map(([id, cfg]) => (
+          <button key={id} onClick={() => onZoneClick(id)} style={pillStyle(id, cfg)}>
             {cfg.icon} {cfg.label}
           </button>
         ))}
@@ -361,13 +371,6 @@ function ParchmentModal({ zone, pages, posts, onClose, onNavigate }) {
     const isAccessible = p.status === 'live' || p.status === 'published' || p.visible === true;
     return isAccessible;
   });
-
-  console.log(
-    'Branch:',
-    cfg.pageSlug,
-    'Pages found:',
-    branchPages.map(p => p.slug)
-  );
 
   // Sub-pages: pages nested deeper than direct children - currently unused, for future nested pages
   const subPages = [];
@@ -416,7 +419,7 @@ function ParchmentModal({ zone, pages, posts, onClose, onNavigate }) {
           boxShadow: '0 24px 80px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.5)',
           overflow: 'hidden',
           animation: 'ptSlideUp 0.28s ease',
-          fontFamily: '"IM Fell English", Georgia, serif',
+          fontFamily: 'Inter, -apple-system, sans-serif',
         }}
       >
         <div
@@ -450,6 +453,7 @@ function ParchmentModal({ zone, pages, posts, onClose, onNavigate }) {
               fontSize: 13.5,
               color: '#6b4a1e',
               fontStyle: 'italic',
+              fontFamily: '"IM Fell English", Georgia, serif',
               lineHeight: 1.55,
             }}
           >
@@ -610,7 +614,7 @@ function ParchmentModal({ zone, pages, posts, onClose, onNavigate }) {
                     {post.title}
                   </div>
                   <div
-                    style={{ fontSize: 11, color: '#8b6914', marginTop: 2, fontStyle: 'italic' }}
+                    style={{ fontSize: 11, color: '#8b6914', marginTop: 2, fontStyle: 'italic', fontFamily: '"IM Fell English", Georgia, serif' }}
                   >
                     {post.date
                       ? new Date(post.date).toLocaleDateString('en-GB', {
@@ -625,17 +629,14 @@ function ParchmentModal({ zone, pages, posts, onClose, onNavigate }) {
             </div>
           )}
 
-          {branchPages.length === 0 && relatedPosts.length === 0 && (
-            <p
-              style={{
-                textAlign: 'center',
-                fontStyle: 'italic',
-                color: '#8b6914',
-                fontSize: 13.5,
-                padding: '14px 0',
-              }}
-            >
-              No content available for this branch yet.
+          {branchPages.length === 0 && (
+            <p style={{ fontStyle: 'italic', fontFamily: '"IM Fell English", Georgia, serif', color: '#8b6914', fontSize: 13, margin: '0 0 14px' }}>
+              No pages listed yet for this section.
+            </p>
+          )}
+          {relatedPosts.length === 0 && (
+            <p style={{ fontStyle: 'italic', fontFamily: '"IM Fell English", Georgia, serif', color: '#8b6914', fontSize: 13, margin: '0 0 14px' }}>
+              No recent news for this section.
             </p>
           )}
 
@@ -682,8 +683,15 @@ export default function ParishTree({ adminMode = false, onNavigate }) {
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const [modalZone, setModalZone] = useState(null);
   const [imgLoaded, setImgLoaded] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
 
   const wrapperRef = useRef(null);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
   const effectiveAdmin = adminMode || isAdmin();
 
   const livePosts = getLivePosts
@@ -744,11 +752,14 @@ export default function ParishTree({ adminMode = false, onNavigate }) {
           {imgLoaded && (
             <>
               <SwayingVines />
-              <EdgePills
-                zones={activeZones}
-                activeZone={activeZone}
-                onZoneClick={handleZoneClick}
-              />
+              {!isMobile && (
+                <EdgePills
+                  zones={activeZones}
+                  activeZone={activeZone}
+                  onZoneClick={handleZoneClick}
+                  isMobile={false}
+                />
+              )}
 
               <svg
                 viewBox="0 0 1152 896"
@@ -763,7 +774,6 @@ export default function ParishTree({ adminMode = false, onNavigate }) {
               >
                 <style>{`
                   .pt-zone { fill: transparent; cursor: pointer; pointer-events: all; transition: fill 0.22s ease; }
-                  .pt-zone:hover { fill: rgba(139,105,20,0.25); }
                 `}</style>
                 {Object.keys(ZONES).map(zoneId => (
                   <path
@@ -844,6 +854,15 @@ export default function ParishTree({ adminMode = false, onNavigate }) {
             </div>
           )}
         </div>
+
+        {isMobile && imgLoaded && (
+          <EdgePills
+            zones={activeZones}
+            activeZone={activeZone}
+            onZoneClick={handleZoneClick}
+            isMobile={true}
+          />
+        )}
       </div>
 
       {modalZone && (

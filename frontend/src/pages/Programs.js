@@ -339,20 +339,27 @@ const Programs = () => {
                       return (
                         <div
                           key={index}
-                          className="relative overflow-hidden rounded shadow"
                           style={{
-                            background: `linear-gradient(135deg, #FDF5E6 0%, #FAF0E6 100%)`,
+                            background: 'linear-gradient(135deg, #FDF5E6 0%, #FAF0E6 100%)',
                             borderLeft: `4px solid ${colorInfo.color}`,
+                            borderRadius: 10,
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.07)',
+                            overflow: 'hidden',
                           }}
                         >
-                          <div className="relative p-4 flex items-start gap-3">
+                          <div style={{ padding: '16px 20px', display: 'flex', alignItems: 'flex-start', gap: 16 }}>
                             {/* Date Badge */}
                             <div
-                              className="flex-shrink-0 w-14 h-14 rounded flex flex-col items-center justify-center text-white font-bold text-xs"
-                              style={{ backgroundColor: colorInfo.color }}
+                              style={{
+                                flexShrink: 0, width: 56, height: 56, borderRadius: 10,
+                                backgroundColor: colorInfo.color,
+                                display: 'flex', flexDirection: 'column',
+                                alignItems: 'center', justifyContent: 'center',
+                                color: '#fff', fontWeight: 700,
+                              }}
                             >
-                              <span className="text-lg">{colorInfo.icon}</span>
-                              <span className="text-[10px]">{colorInfo.name}</span>
+                              <span style={{ fontSize: 22 }}>{colorInfo.icon}</span>
+                              <span style={{ fontSize: 9, letterSpacing: '0.04em', marginTop: 1 }}>{colorInfo.name}</span>
                             </div>
 
                             {/* Content */}
@@ -392,7 +399,6 @@ const Programs = () => {
               {activeTab === 'parish' && (
                 <div className="grid gap-4">
                   {PARISH_EVENTS.map((event, index) => {
-                    // Color coding by category
                     const categoryColors = {
                       Meeting: '#1B3A6B',
                       Youth: '#BA0021',
@@ -403,89 +409,51 @@ const Programs = () => {
                       Fundraising: '#4B0082',
                       Event: '#20B2AA',
                     };
-                    const categoryColor = categoryColors[event.category] || '#666';
-
-                    return (
-                      <div
-                        key={index}
-                        className="bg-white rounded-lg shadow-md p-4 flex items-center gap-4 hover:shadow-lg transition-shadow border-l-4"
-                        style={{ borderLeftColor: categoryColor }}
-                      >
-                        <div className="flex-shrink-0">
-                          <span className="text-xl">
-                            {event.category === 'Meeting' && '📋'}
-                            {event.category === 'Youth' && '🎉'}
-                            {event.category === 'Spiritual' && '🕯️'}
-                            {event.category === 'Petitions' && '🙏'}
-                            {event.category === 'Celebration' && '🎊'}
-                            {event.category === 'Mass' && '⛪'}
-                            {event.category === 'Fundraising' && '💰'}
-                            {event.category === 'Event' && '📅'}
-                          </span>
-                        </div>
-                        <div className="flex-grow">
-                          <div className="flex items-center gap-2">
-                            <h3 className="font-semibold text-sm text-gray-800">{event.name}</h3>
-                            <span
-                              className="px-2 py-0.5 rounded text-[10px] text-white font-medium"
-                              style={{ backgroundColor: categoryColor }}
-                            >
-                              {event.category}
-                            </span>
-                          </div>
-                          <p className="text-gray-500 text-xs">{event.date}</p>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Parish Events Section */}
-              {activeTab === 'parish' && (
-                <div className="grid gap-3">
-                  {PARISH_EVENTS.map((event, index) => {
-                    const categoryColors = {
-                      Meeting: '#1B3A6B',
-                      Youth: '#BA0021',
-                      Spiritual: '#6B8E23',
-                      Petitions: '#FF8C00',
-                      Celebration: '#FFD700',
-                      Mass: '#8B4513',
-                      Fundraising: '#4B0082',
-                      Event: '#20B2AA',
+                    const categoryIcons = {
+                      Meeting: '📋', Youth: '🎉', Spiritual: '🕯️', Petitions: '🙏',
+                      Celebration: '🎊', Mass: '⛪', Fundraising: '💰', Event: '📅',
                     };
                     const categoryColor = categoryColors[event.category] || '#666';
 
                     return (
                       <div
                         key={index}
-                        className="bg-white rounded shadow p-3 flex items-center gap-3 hover:shadow transition-shadow border-l-4"
-                        style={{ borderLeftColor: categoryColor }}
+                        style={{
+                          background: '#fff',
+                          borderRadius: 10,
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.07)',
+                          padding: '16px 20px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 16,
+                          borderLeft: `4px solid ${categoryColor}`,
+                          minHeight: 72,
+                          transition: 'box-shadow 0.2s',
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.13)'}
+                        onMouseLeave={e => e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.07)'}
                       >
-                        <div className="flex-shrink-0">
-                          <span className="text-xl">
-                            {event.category === 'Meeting' && '📋'}
-                            {event.category === 'Youth' && '🎉'}
-                            {event.category === 'Spiritual' && '🕯️'}
-                            {event.category === 'Petitions' && '🙏'}
-                            {event.category === 'Celebration' && '🎊'}
-                            {event.category === 'Mass' && '⛪'}
-                            {event.category === 'Fundraising' && '💰'}
-                            {event.category === 'Event' && '📅'}
-                          </span>
+                        <div style={{
+                          flexShrink: 0,
+                          width: 44, height: 44,
+                          borderRadius: 10,
+                          background: `${categoryColor}18`,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 20,
+                        }}>
+                          {categoryIcons[event.category] || '📅'}
                         </div>
-                        <div className="flex-grow">
-                          <div className="flex items-center gap-2">
-                            <h3 className="font-semibold text-sm text-gray-800">{event.name}</h3>
-                            <span
-                              className="px-2 py-0.5 rounded text-[10px] text-white font-medium"
-                              style={{ backgroundColor: categoryColor }}
-                            >
+                        <div style={{ flexGrow: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <h3 style={{ fontWeight: 600, fontSize: 14, color: '#1f2937', margin: 0 }}>{event.name}</h3>
+                            <span style={{
+                              padding: '2px 8px', borderRadius: 4, fontSize: 10,
+                              color: '#fff', fontWeight: 600, background: categoryColor,
+                            }}>
                               {event.category}
                             </span>
                           </div>
-                          <p className="text-gray-500 text-xs">{event.date}</p>
+                          <p style={{ color: '#9ca3af', fontSize: 12, margin: '4px 0 0' }}>{event.date}</p>
                         </div>
                       </div>
                     );

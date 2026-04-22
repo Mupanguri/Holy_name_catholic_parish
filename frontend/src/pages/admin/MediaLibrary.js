@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 import { useAuth, ROLES } from '../../context/AuthContext';
-import { api, getFullUrl } from '../../services/api';
+import { api, getFullUrl, mediaAPI } from '../../services/api';
 import toast from '../../constants/toast';
 
 const MediaLibrary = () => {
@@ -13,22 +13,27 @@ const MediaLibrary = () => {
     getMediaByCategory,
     deleteMedia,
     isSuperAdmin,
+    getAllDocuments,
     getPendingDocuments,
     reviewDocument,
     refreshDocuments,
     refreshMedia,
     getPendingVideoLinks,
     getApprovedVideoLinks,
+    getAllVideoLinks,
     reviewVideoLink,
+    submitVideoLink,
+    loadVideoLinks,
   } = useAuth();
 
   const [activeCategory, setActiveCategory] = useState('all');
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showVideoLinkModal, setShowVideoLinkModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [importing, setImporting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState(false);
+  const [coverImageFile, setCoverImageFile] = useState(null);
+  const [coverImagePreview, setCoverImagePreview] = useState('');
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [reviewNotes, setReviewNotes] = useState('');
@@ -52,14 +57,23 @@ const MediaLibrary = () => {
   const [submittingVideo, setSubmittingVideo] = useState(false);
 
   const allMedia = getAllMedia();
+  const pendingMassCount = allMedia.filter(m => m.status === 'pending' && m.upload_type === 'mass').length;
   const imageMedia = getMediaByCategory('images');
   const documentMedia = getMediaByCategory('documents');
   const videoMedia = getMediaByCategory('videos');
+  // Approved video links for display; non-super-admins also see their own pending ones
   const approvedVideoLinks = getApprovedVideoLinks();
-  const totalVideosCount = videoMedia.length + approvedVideoLinks.length;
-  const pendingDocuments = isSuperAdmin() ? getPendingDocuments() : [];
+  const allVideoLinksForUser = getAllVideoLinks
+    ? getAllVideoLinks().filter(v => v.status === 'approved' || (!isSuperAdmin() && v.author_id === currentUser?.id))
+    : approvedVideoLinks;
+  const allDocuments = getAllDocuments ? getAllDocuments() : [];
+  const pendingDocuments = isSuperAdmin() ? getPendingDocuments() : allDocuments.filter(d => d.status === 'pending');
   const pendingVideoLinks = isSuperAdmin() ? getPendingVideoLinks() : [];
-  const regularMedia = allMedia.filter(m => !m.version);
+  // All docs visible to current user (approved docs live in media table, pending in documents table)
+  const myPendingDocs = allDocuments.filter(d => d.status === 'pending');
+  const totalDocCount = documentMedia.length + myPendingDocs.length;
+  const totalVideosCount = videoMedia.length + allVideoLinksForUser.length;
+  const totalFilesCount = allMedia.length + myPendingDocs.length + allVideoLinksForUser.length;
 
   const getFilteredMedia = () => {
     let media =
@@ -70,16 +84,18 @@ const MediaLibrary = () => {
           : activeCategory === 'videos'
             ? [
                 ...videoMedia,
-                ...approvedVideoLinks.map(v => ({
+                ...allVideoLinksForUser.map(v => ({
                   ...v,
                   id: `vl-${v.id}`,
                   name: v.title,
                   type: 'video-link',
                   url: v.url,
                   thumbnail: v.thumbnail,
+                  platform: v.platform,
+                  status: v.status,
                 })),
               ]
-            : regularMedia;
+            : allMedia;
 
     if (searchTerm) {
       media = media.filter(m => m.name.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -127,6 +143,12 @@ const MediaLibrary = () => {
   const [showVideoReviewModal, setShowVideoReviewModal] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [videoReviewNotes, setVideoReviewNotes] = useState('');
+
+  const [showMassUploadModal, setShowMassUploadModal] = useState(false);
+  const [massFiles, setMassFiles] = useState([]);
+  const [massUploading, setMassUploading] = useState(false);
+  const [massProgress, setMassProgress] = useState({ done: 0, total: 0 });
+  const [massApproving, setMassApproving] = useState(false);
 
   const handleVideoReview = video => {
     setSelectedVideo(video);
@@ -178,6 +200,7 @@ const MediaLibrary = () => {
       formData.append('type', uploadForm.type);
       formData.append('category', uploadForm.category);
       formData.append('notes', uploadForm.notes);
+      if (coverImageFile) formData.append('cover_image', coverImageFile);
 
       const token = localStorage.getItem('adminToken');
       const response = await fetch(`${api.baseUrl}/api/documents/upload`, {
@@ -192,6 +215,8 @@ const MediaLibrary = () => {
         );
         setUploadForm({ name: '', type: 'image', url: '', category: 'images', notes: '' });
         setSelectedFile(null);
+        setCoverImageFile(null);
+        setCoverImagePreview('');
         setShowUploadModal(false);
         try {
           await refreshDocuments();
@@ -228,45 +253,64 @@ const MediaLibrary = () => {
     }
   };
 
-  const handleImportFromPublic = async () => {
-    setImporting(true);
+  const handleMassUpload = async () => {
+    if (!massFiles.length) return;
+    setMassUploading(true);
+    const BATCH = 20;
+    let done = 0;
+    setMassProgress({ done: 0, total: massFiles.length });
     try {
-      const token = localStorage.getItem('adminToken');
-      const response = await fetch(`${api.baseUrl}/api/media/import`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      });
-      const result = await response.json();
-      if (result.success) {
-        toast.success(`Successfully imported ${result.imported} images from public folder!`);
-        try {
-          await refreshMedia();
-        } catch (refreshError) {
-          console.error('Error refreshing media:', refreshError);
-        }
-      } else {
-        toast.error('Error: ' + result.error);
+      for (let i = 0; i < massFiles.length; i += BATCH) {
+        const batch = massFiles.slice(i, i + BATCH);
+        const fd = new FormData();
+        batch.forEach(f => fd.append('files', f));
+        await mediaAPI.massUpload(fd);
+        done += batch.length;
+        setMassProgress({ done, total: massFiles.length });
       }
+      await refreshMedia();
+      setShowMassUploadModal(false);
+      setMassFiles([]);
+      toast.success(`${massFiles.length} image${massFiles.length > 1 ? 's' : ''} uploaded — pending super admin approval`);
     } catch (error) {
-      toast.error('Error importing: ' + error.message);
+      toast.error('Error uploading: ' + error.message);
     }
-    setImporting(false);
+    setMassUploading(false);
+  };
+
+  const handleMassApprove = async () => {
+    setMassApproving(true);
+    try {
+      const result = await mediaAPI.massApprove();
+      await refreshMedia();
+      toast.success(`Approved ${result.approved} image${result.approved !== 1 ? 's' : ''}`);
+    } catch (error) {
+      toast.error('Error approving: ' + error.message);
+    }
+    setMassApproving(false);
   };
 
   const handleUrlChange = async e => {
     const url = e.target.value;
-    setVideoLinkForm({ ...videoLinkForm, url });
+    setVideoLinkForm(prev => ({ ...prev, url }));
     if (url) {
       setFetchingThumbnail(true);
       try {
         let thumbnail = '';
+        // YouTube — extract video ID and use public thumbnail API
         if (url.includes('youtube.com') || url.includes('youtu.be')) {
           const videoId = url.match(
-            /(?:youtu\.be\/|youtube\.com\/watch\?v=|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/
+            /(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{11})/
           );
-          if (videoId) thumbnail = `https://img.youtube.com/vi/${videoId[1]}/maxresdefault.jpg`;
+          if (videoId) thumbnail = `https://img.youtube.com/vi/${videoId[1]}/mqdefault.jpg`;
         }
-        if (thumbnail) setVideoLinkForm(prev => ({ ...prev, thumbnail }));
+        // No public thumbnail API for TikTok/Facebook/Instagram without OAuth —
+        // leave blank so the platform label placeholder renders instead
+        if (thumbnail) {
+          setVideoLinkForm(prev => ({ ...prev, thumbnail }));
+        } else {
+          setVideoLinkForm(prev => ({ ...prev, thumbnail: '' }));
+        }
       } catch (err) {
         console.error('Error detecting video:', err);
       }
@@ -312,9 +356,9 @@ const MediaLibrary = () => {
         toast.success('Video link submitted for approval!');
         setVideoLinkForm({ url: '', title: '', description: '', thumbnail: '' });
         setShowVideoLinkModal(false);
-        window.location.reload();
+        try { await loadVideoLinks(); } catch {}
       } else {
-        toast.error('Error: ' + result.error);
+        toast.error('Error: ' + (result.error || 'Failed to submit video link'));
       }
     } catch (error) {
       toast.error('Error submitting video link: ' + error.message);
@@ -393,23 +437,23 @@ const MediaLibrary = () => {
   };
 
   const tabs = [
-    { key: 'all', label: 'All', count: regularMedia.length },
+    { key: 'all', label: 'All', count: totalFilesCount },
     { key: 'images', label: 'Images', count: imageMedia.length },
-    { key: 'documents', label: 'Documents', count: documentMedia.length },
+    { key: 'documents', label: 'Documents', count: totalDocCount },
     { key: 'videos', label: 'Videos', count: totalVideosCount },
   ];
 
   const statCards = [
     {
       label: 'Total Files',
-      value: allMedia.length,
+      value: totalFilesCount,
       color: 'var(--theme-accent)',
       bg: 'rgba(42,96,153,0.15)',
     },
     { label: 'Images', value: imageMedia.length, color: '#22c55e', bg: 'rgba(34,197,94,0.15)' },
     {
       label: 'Documents',
-      value: documentMedia.length,
+      value: totalDocCount,
       color: '#ef4444',
       bg: 'rgba(239,68,68,0.15)',
     },
@@ -756,27 +800,29 @@ const MediaLibrary = () => {
             <div className="ml-sub">Manage images, documents, and videos</div>
           </div>
           <div className="ml-actions">
-            {!isSuperAdmin() && (
+            {isSuperAdmin() && pendingMassCount > 0 && (
               <button
-                onClick={handleImportFromPublic}
-                disabled={importing}
+                onClick={handleMassApprove}
+                disabled={massApproving}
                 className="ml-btn ml-btn-green"
               >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                  <polyline points="7,10 12,15 17,10" />
-                  <line x1="12" y1="15" x2="12" y2="3" />
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20,6 9,17 4,12" />
                 </svg>
-                {importing ? 'Importing...' : 'Import from Public'}
+                {massApproving ? 'Approving...' : `Mass Approve (${pendingMassCount})`}
+              </button>
+            )}
+            {!isSuperAdmin() && (
+              <button
+                onClick={() => setShowMassUploadModal(true)}
+                className="ml-btn ml-btn-green"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="17,8 12,3 7,8" />
+                  <line x1="12" y1="3" x2="12" y2="15" />
+                </svg>
+                Mass Upload
               </button>
             )}
             {!isSuperAdmin() && (
@@ -840,6 +886,22 @@ const MediaLibrary = () => {
             </div>
           ))}
         </div>
+
+        {/* My pending documents — soccom_admin view of own submitted docs */}
+        {!isSuperAdmin() && myPendingDocs.length > 0 && (
+          <div className="ml-review-section" style={{ borderColor: 'rgba(234,179,8,0.2)', background: 'rgba(234,179,8,0.04)' }}>
+            <div className="ml-review-title" style={{ color: '#eab308' }}>My Pending Documents ({myPendingDocs.length})</div>
+            {myPendingDocs.map(doc => (
+              <div key={doc.id} className="ml-review-item">
+                <div>
+                  <div className="ml-review-name">{doc.name || doc.title || 'Untitled'}</div>
+                  <div className="ml-review-meta" style={{ color: '#eab308' }}>Awaiting review — submitted {doc.created_at ? new Date(doc.created_at).toLocaleDateString() : ''}</div>
+                </div>
+                <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 5, background: 'rgba(234,179,8,0.12)', border: '1px solid rgba(234,179,8,0.25)', color: '#eab308' }}>Pending</span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Pending review — super admin */}
         {isSuperAdmin() && pendingDocuments.length > 0 && (
@@ -909,11 +971,48 @@ const MediaLibrary = () => {
               <div key={item.id} className="ml-item">
                 <div className="ml-item-preview">
                   {item.type === 'image' ? (
-                    <img src={getFullUrl(item.url)} alt={item.name} />
-                  ) : item.type === 'video-link' && item.thumbnail ? (
-                    <img src={item.thumbnail} alt={item.name} />
+                    <img src={getFullUrl(item.url)} alt={item.name} onError={e => { e.target.style.display = 'none'; e.target.nextSibling && (e.target.nextSibling.style.display = 'flex'); }} />
+                  ) : item.type === 'video-link' ? (
+                    item.thumbnail ? (
+                      <img
+                        src={item.thumbnail}
+                        alt={item.name}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        onError={e => {
+                          const src = e.target.src;
+                          if (src.includes('mqdefault')) {
+                            e.target.src = src.replace('mqdefault', 'hqdefault');
+                          } else {
+                            e.target.style.display = 'none';
+                            const parent = e.target.parentElement;
+                            const plat = item.platform || 'video';
+                            const wrapper = document.createElement('div');
+                            wrapper.className = 'ml-item-placeholder';
+                            wrapper.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:6px;font-size:22px;color:rgba(168,204,232,0.4)';
+                            wrapper.textContent = '▶';
+                            const label = document.createElement('span');
+                            label.style.cssText = 'font-size:10px;text-transform:capitalize;letter-spacing:0.05em';
+                            label.textContent = plat;
+                            wrapper.appendChild(label);
+                            parent.appendChild(wrapper);
+                          }
+                        }}
+                      />
+                    ) : (
+                      <div className="ml-item-placeholder" style={{ flexDirection: 'column', gap: 6, fontSize: 22 }}>
+                        ▶
+                        <span style={{ fontSize: 10, textTransform: 'capitalize', letterSpacing: '0.05em', color: 'rgba(168,204,232,0.4)' }}>
+                          {item.platform || 'video'}
+                        </span>
+                      </div>
+                    )
                   ) : (
                     <div className="ml-item-placeholder">{getTypeIcon(item.type)}</div>
+                  )}
+                  {(item.status === 'pending') && (
+                    <div style={{ position: 'absolute', top: 5, right: 5, background: 'rgba(234,179,8,0.9)', color: '#1a1a00', fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4, letterSpacing: '0.05em' }}>
+                      PENDING
+                    </div>
                   )}
                 </div>
                 <div className="ml-item-info">
@@ -1014,12 +1113,44 @@ const MediaLibrary = () => {
                     style={{ resize: 'vertical' }}
                   />
                 </div>
+                {uploadForm.type === 'document' && (
+                  <div className="ml-field">
+                    <label className="ml-label">Cover Image (optional)</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="ml-input"
+                      onChange={e => {
+                        const f = e.target.files[0];
+                        if (f) {
+                          setCoverImageFile(f);
+                          setCoverImagePreview(URL.createObjectURL(f));
+                        } else {
+                          setCoverImageFile(null);
+                          setCoverImagePreview('');
+                        }
+                      }}
+                    />
+                    {coverImagePreview && (
+                      <img
+                        src={coverImagePreview}
+                        alt="Cover preview"
+                        style={{ marginTop: 8, width: '100%', height: 120, objectFit: 'cover', borderRadius: 8, border: '1px solid rgba(168,204,232,0.12)' }}
+                      />
+                    )}
+                    <div className="ml-file-info">
+                      Add a cover image so the document is recognisable in the Library (e.g. a screenshot of the first page).
+                    </div>
+                  </div>
+                )}
                 <div className="ml-modal-footer">
                   <button
                     type="button"
                     onClick={() => {
                       setShowUploadModal(false);
                       setSelectedFile(null);
+                      setCoverImageFile(null);
+                      setCoverImagePreview('');
                     }}
                     className="ml-modal-btn ml-modal-btn-cancel"
                   >
@@ -1038,13 +1169,81 @@ const MediaLibrary = () => {
           </div>
         )}
 
+        {/* Mass Upload Modal */}
+        {showMassUploadModal && (
+          <div className="ml-modal-overlay">
+            <div className="ml-modal">
+              <div className="ml-modal-title">Mass Upload Images</div>
+              <div className="ml-modal-sub">Select up to 300 images. They will be stored as pending until a super admin approves them.</div>
+              <div className="ml-field">
+                <label className="ml-label">Select Images (max 300)</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="ml-input"
+                  onChange={e => {
+                    const files = Array.from(e.target.files || []);
+                    if (files.length > 300) {
+                      toast.warning('Maximum 300 images allowed. Only the first 300 will be uploaded.');
+                      setMassFiles(files.slice(0, 300));
+                    } else {
+                      setMassFiles(files);
+                    }
+                  }}
+                />
+                {massFiles.length > 0 && (
+                  <div className="ml-file-info">
+                    {massFiles.length} image{massFiles.length > 1 ? 's' : ''} selected
+                    {' '}({(massFiles.reduce((s, f) => s + f.size, 0) / 1024 / 1024).toFixed(1)} MB total)
+                  </div>
+                )}
+              </div>
+              {massUploading && (
+                <div style={{ margin: '12px 0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(168,204,232,0.5)', marginBottom: 6 }}>
+                    <span>Uploading...</span>
+                    <span>{massProgress.done} / {massProgress.total}</span>
+                  </div>
+                  <div style={{ height: 6, background: 'rgba(168,204,232,0.08)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%',
+                      width: `${massProgress.total ? (massProgress.done / massProgress.total * 100) : 0}%`,
+                      background: 'rgba(42,96,153,0.8)',
+                      borderRadius: 3,
+                      transition: 'width 0.3s',
+                    }} />
+                  </div>
+                </div>
+              )}
+              <div className="ml-modal-footer">
+                <button
+                  type="button"
+                  onClick={() => { setShowMassUploadModal(false); setMassFiles([]); }}
+                  disabled={massUploading}
+                  className="ml-modal-btn ml-modal-btn-cancel"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleMassUpload}
+                  disabled={massUploading || massFiles.length === 0}
+                  className="ml-modal-btn ml-modal-btn-primary"
+                >
+                  {massUploading ? `Uploading (${massProgress.done}/${massProgress.total})...` : `Upload ${massFiles.length || ''} Image${massFiles.length !== 1 ? 's' : ''}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Video Link Modal */}
         {showVideoLinkModal && (
           <div className="ml-modal-overlay">
             <div className="ml-modal ml-modal-lg">
               <div className="ml-modal-title">Add Video Link</div>
               <div className="ml-modal-sub">
-                Add video links from YouTube, TikTok, Instagram, Google Drive, Snapchat, etc.
+                Add video links from YouTube, TikTok, Facebook, Instagram, Vimeo, Google Drive, X/Twitter, Snapchat, and more.
               </div>
               <form onSubmit={handleVideoLinkSubmit}>
                 <div className="ml-field">
