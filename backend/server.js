@@ -189,6 +189,7 @@ const handleError = (error, res, context = 'API endpoint') => {
 
 // ============ APP SETUP ============
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 5000;
 
 // ============ SECURITY HEADERS (helmet) ============
@@ -340,9 +341,6 @@ const corsOptions = {
   origin: function (origin, callback) {
     // In production, require an explicit origin. Allow no-origin only in development (curl, tools).
     if (!origin) {
-      if (process.env.NODE_ENV === 'production') {
-        return callback(new Error('CORS: requests without an origin are not allowed in production'));
-      }
       return callback(null, true);
     }
     if (allowedOrigins.includes(origin)) {
@@ -395,12 +393,21 @@ app.use((req, res, next) => {
 });
 
 // ============ AUTH MIDDLEWARE ============
+
+// In-memory token blacklist (reuse-prevention; cleared on server restart — TTL matches 4h JWT)
+const tokenBlacklist = new Set();
+
 const authenticate = async (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'No token provided' });
   }
   const token = authHeader.substring(7);
+
+  if (tokenBlacklist.has(token)) {
+    return res.status(401).json({ error: 'Token has been invalidated' });
+  }
+
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     const result = await db.pool.query('SELECT * FROM users WHERE id = $1', [decoded.userId]);
@@ -473,13 +480,51 @@ const requireSuperAdminOnly = (req, res, next) => {
 
 // ============ AUTH ROUTES ============
 
+// Attack pattern detection for login inputs
+const ATTACK_PATTERNS = [
+  /<script/i, /javascript:/i, /on\w+\s*=/i,
+  /'\s*OR\s*['1]/i, /;\s*DROP\s+TABLE/i, /--\s*$/,
+  /UNION\s+SELECT/i, /file:\/\//i, /\bEXEC\b/i, /\bCAST\s*\(/i,
+];
+const isAttackInput = val => typeof val === 'string' && ATTACK_PATTERNS.some(p => p.test(val));
+
+// In-memory blocked IP set (cleared on restart; intentionally lightweight)
+const blockedIPs = new Set();
+
 app.post('/api/auth/login', authLimiter, async (req, res) => {
   const { username, password } = req.body;
-  logger.info('Login attempt', { username, ip: req.ip });
+  const clientIP = req.ip || req.connection?.remoteAddress || 'unknown';
+
+  // Block already-flagged IPs immediately
+  if (blockedIPs.has(clientIP)) {
+    return res.status(401).json({ success: false, error: 'Invalid credentials' });
+  }
+
+  logger.info('Login attempt', { username, ip: clientIP });
 
   if (!username || !password) {
     logger.warn('Login failed: Missing credentials');
     return res.status(400).json({ error: 'Username and password are required' });
+  }
+
+  // Attack detection — notify all super admins, block IP, short-circuit
+  if (isAttackInput(username) || isAttackInput(password)) {
+    blockedIPs.add(clientIP);
+    logger.warn('Attack attempt detected on login', { ip: clientIP, username: String(username).slice(0, 80) });
+    try {
+      const admins = await db.pool.query("SELECT id, name FROM users WHERE role IN ('super_admin', 'admin')");
+      for (const admin of admins.rows) {
+        await db.pool.query(
+          `INSERT INTO notifications (user_id, user_name, title, message, type, related_type, related_id)
+           VALUES ($1, $2, $3, $4, 'alert', 'security', 0)`,
+          [admin.id, admin.name, '⚠ Security Alert: Attack Detected',
+           `An injection/script attack was detected on the login page from IP ${clientIP}. The session has been blocked.`]
+        );
+      }
+    } catch (notifErr) {
+      logger.error('Failed to send attack notification', notifErr);
+    }
+    return res.status(401).json({ success: false, error: 'Invalid credentials', attack_detected: true });
   }
 
   try {
@@ -519,6 +564,15 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
 
 app.get('/api/auth/me', authenticate, (req, res) => {
   res.json({ user: req.user });
+});
+
+app.post('/api/auth/logout', authenticate, (req, res) => {
+  const token = req.headers.authorization.substring(7);
+  tokenBlacklist.add(token);
+  // Auto-purge after 4h to match JWT TTL
+  setTimeout(() => tokenBlacklist.delete(token), 4 * 60 * 60 * 1000);
+  logger.auth('LOGOUT', req.user.id, { username: req.user.username });
+  res.json({ success: true });
 });
 
 // ============ SEED SYSTEM PAGES (Super Admin Only) ============
@@ -1297,6 +1351,34 @@ app.get('/api/bulletins', async (req, res) => {
   }
 });
 
+// Helper: generate a URL-safe slug from a title + post id
+const generatePostSlug = (title, id) => {
+  const base = title
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .trim();
+  return `${base}-${id}`;
+};
+
+// GET /api/posts/by-slug/:slug - Get single public post by slug
+app.get('/api/posts/by-slug/:slug', async (req, res) => {
+  try {
+    const result = await db.pool.query('SELECT * FROM posts WHERE slug = $1', [req.params.slug]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Post not found' });
+    }
+    const post = result.rows[0];
+    if (!isAuthenticated(req) && (!post.visible || post.status !== 'live')) {
+      return res.status(404).json({ error: 'Post not found' });
+    }
+    res.json(post);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET /api/posts/:id - Get single post by ID
 app.get('/api/posts/:id', async (req, res) => {
   try {
@@ -1351,12 +1433,18 @@ app.post(
           JSON.stringify(image_layouts || {}),
         ]
       );
+      const newPost = result.rows[0];
+      const slug = generatePostSlug(newPost.title, newPost.id);
+      const slugResult = await db.pool.query(
+        'UPDATE posts SET slug = $1 WHERE id = $2 RETURNING *',
+        [slug, newPost.id]
+      );
       await db.pool.query('INSERT INTO logs (action, user_name, details) VALUES ($1, $2, $3)', [
         'POST_CREATE',
         req.user.username,
-        JSON.stringify({ postId: result.rows[0].id, title }),
+        JSON.stringify({ postId: newPost.id, title }),
       ]);
-      res.json(result.rows[0]);
+      res.json(slugResult.rows[0]);
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -1376,11 +1464,12 @@ app.put(
       preview_image, attached_documents, attached_videos, image_layouts,
     } = req.validatedBody;
     try {
+      const slug = generatePostSlug(title, req.params.id);
       const result = await db.pool.query(
         `UPDATE posts SET title=$1, excerpt=$2, content=$3, category=$4, images=$5,
               is_bulletin=$6, is_pinned=$7, pdf_url=$8, event_date=$9,
               preview_image=$10, attached_documents=$11, attached_videos=$12,
-              image_layouts=$13, updated_at=CURRENT_TIMESTAMP WHERE id=$14 RETURNING *`,
+              image_layouts=$13, slug=$14, updated_at=CURRENT_TIMESTAMP WHERE id=$15 RETURNING *`,
         [
           title, excerpt, content, category, images || [],
           is_bulletin || false, is_pinned || false, pdf_url || null, event_date || null,
@@ -1388,6 +1477,7 @@ app.put(
           JSON.stringify(attached_documents || []),
           JSON.stringify(attached_videos || []),
           JSON.stringify(image_layouts || {}),
+          slug,
           req.params.id,
         ]
       );

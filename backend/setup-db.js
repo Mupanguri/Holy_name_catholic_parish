@@ -230,8 +230,8 @@ const createTables = async () => {
 
         if (parseInt(userCheck.rows[0].count) === 0) {
             // Hash passwords and seed default users
-            const hashedAdminPassword = await bcrypt.hash('admin123', 12);
-            const hashedSoccomPassword = await bcrypt.hash('soccom123', 12);
+            const hashedAdminPassword = await bcrypt.hash(process.env.DEFAULT_ADMIN_PASSWORD || 'admin123', 12);
+            const hashedSoccomPassword = await bcrypt.hash(process.env.DEFAULT_SOCCOM_PASSWORD || 'soccom123', 12);
 
             await pool.query(`
                 INSERT INTO users (username, password, name, email, role) VALUES

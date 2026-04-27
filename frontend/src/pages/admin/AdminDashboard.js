@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import NotificationsPanel from '../../components/NotificationsPanel';
+import AdminTutorial, { STORAGE_KEY } from '../../components/AdminTutorial';
 
 const AdminDashboard = () => {
   const {
@@ -20,6 +21,13 @@ const AdminDashboard = () => {
   // Hooks must be called before any early returns
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [theme, setTheme] = useState('dim'); // 'light', 'dim', 'dark'
+  const [showTutorial, setShowTutorial] = useState(false);
+
+  useEffect(() => {
+    if (currentUser && !localStorage.getItem(STORAGE_KEY(currentUser.id))) {
+      setShowTutorial(true);
+    }
+  }, [currentUser]);
 
   // Redirect to login if not authenticated (and not loading)
   useEffect(() => {
@@ -97,34 +105,37 @@ const AdminDashboard = () => {
 
   if (isSuperAdmin()) {
     menuItems = [
-      { path: '/admin/dashboard', label: 'Dashboard', icon: 'grid' },
-      { path: '/admin/pages', label: 'Pages', icon: 'file', description: 'Toggle visibility' },
-      { path: '/admin/posts', label: 'Posts', icon: 'edit', description: 'Toggle visibility' },
-      { path: '/admin/media', label: 'Media Library', icon: 'image', description: 'Manage media' },
+      { path: '/admin/dashboard', label: 'Dashboard', icon: 'grid', tutorialId: 'tutorial-nav-dashboard' },
+      { path: '/admin/pages', label: 'Pages', icon: 'file', description: 'Toggle visibility', tutorialId: 'tutorial-nav-pages' },
+      { path: '/admin/posts', label: 'Posts', icon: 'edit', description: 'Toggle visibility', tutorialId: 'tutorial-nav-posts' },
+      { path: '/admin/media', label: 'Media Library', icon: 'image', description: 'Manage media', tutorialId: 'tutorial-nav-media' },
       {
         path: '/admin/tasks',
         label: `Tasks${taskCount > 0 ? ` (${taskCount})` : ''}`,
         icon: 'check',
+        tutorialId: 'tutorial-nav-tasks',
       },
       {
         path: '/admin/submissions',
         label: `Approvals${totalPending > 0 ? ` (${totalPending})` : ''}`,
         icon: 'inbox',
         badge: totalPending > 0 ? totalPending : null,
+        tutorialId: 'tutorial-nav-submissions',
       },
       { path: '/admin/notifications', label: 'Notifications', icon: 'bell' },
-      { path: '/admin/users', label: 'Users', icon: 'users' },
+      { path: '/admin/users', label: 'Users', icon: 'users', tutorialId: 'tutorial-nav-users' },
     ];
   } else {
     menuItems = [
-      { path: '/admin/dashboard', label: 'Dashboard', icon: 'grid' },
-      { path: '/admin/pages', label: 'Pages', icon: 'file' },
-      { path: '/admin/posts', label: 'Posts', icon: 'edit' },
-      { path: '/admin/media', label: 'Media Library', icon: 'image' },
+      { path: '/admin/dashboard', label: 'Dashboard', icon: 'grid', tutorialId: 'tutorial-nav-dashboard' },
+      { path: '/admin/pages', label: 'Pages', icon: 'file', tutorialId: 'tutorial-nav-pages' },
+      { path: '/admin/posts', label: 'Posts', icon: 'edit', tutorialId: 'tutorial-nav-posts' },
+      { path: '/admin/media', label: 'Media Library', icon: 'image', tutorialId: 'tutorial-nav-media' },
       {
         path: '/admin/tasks',
         label: `Tasks${taskCount > 0 ? ` (${taskCount})` : ''}`,
         icon: 'check',
+        tutorialId: 'tutorial-nav-tasks',
       },
       { path: '/admin/notifications', label: 'Notifications', icon: 'bell' },
     ];
@@ -649,6 +660,7 @@ const AdminDashboard = () => {
               <Link
                 key={item.path}
                 to={item.path}
+                id={item.tutorialId}
                 className={`ad-nav-item${isActive(item.path) ? ' active' : ''}`}
               >
                 <span className="ad-nav-icon">
@@ -707,11 +719,39 @@ const AdminDashboard = () => {
                 {theme === 'dark' && '⚫ Dark'}
               </button>
             </div>
+            <button
+              onClick={() => setShowTutorial(true)}
+              title="Help / Tour"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 34, height: 34,
+                borderRadius: '50%',
+                border: `1px solid ${colors.border}`,
+                background: colors.bgSecondary,
+                color: colors.textMuted,
+                cursor: 'pointer',
+                fontSize: 15,
+                fontWeight: 700,
+                marginRight: 8,
+                flexShrink: 0,
+              }}
+            >
+              ?
+            </button>
             <NotificationsPanel />
           </div>
           <Outlet context={{ theme, colors, setTheme }} />
         </main>
       </div>
+
+      {showTutorial && (
+        <AdminTutorial
+          role={currentUser.role}
+          userId={currentUser.id}
+          onClose={() => setShowTutorial(false)}
+          colors={colors}
+        />
+      )}
     </>
   );
 };

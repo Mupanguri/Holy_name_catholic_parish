@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import * as Tabs from '@radix-ui/react-tabs';
 import { MagnifyingGlassIcon, ChevronLeftIcon, ChevronRightIcon } from '@radix-ui/react-icons';
 import { POST_CATEGORIES } from '../constants/CMSConstants';
+import { sanitizeInput } from '../utils/sanitize';
 
 const POSTS_PER_PAGE = 9;
 
@@ -32,6 +33,18 @@ const TAB_BG = {
     size: 'contain',
     opacity: 0.25,
   },
+  [POST_CATEGORIES.WRITEUPS]: {
+    gradient: 'linear-gradient(135deg, #0e1620 0%, #1b2a38 100%)',
+    image: '/Holy_Name_Parish_Photo.jpg',
+    size: 'cover',
+    opacity: 0.28,
+  },
+  [POST_CATEGORIES.PRIESTS_DESK]: {
+    gradient: 'linear-gradient(135deg, #0e1620 0%, #1b2a38 100%)',
+    image: '/Holy_Name_Parish_Photo.jpg',
+    size: 'cover',
+    opacity: 0.28,
+  },
 };
 
 const YOUTH_IMAGES = [1, 2, 3, 4].map(n => `/youth%20committee/${n}.jpg`);
@@ -49,6 +62,8 @@ const BADGE_COLORS = {
   [POST_CATEGORIES.YOUTH_COMMITTEE]: '#1B3A6B',
   [POST_CATEGORIES.ADULT_COMMITTEE]: '#7a3010',
   [POST_CATEGORIES.INTERNATIONAL_OUTREACH]: '#BA0021',
+  [POST_CATEGORIES.WRITEUPS]: '#1B3A6B',
+  [POST_CATEGORIES.PRIESTS_DESK]: '#5a2d82',
 };
 
 /* ── Glass style constants ── */
@@ -71,7 +86,7 @@ const glass = {
 };
 
 const PostsPage = () => {
-  const { getRecentPosts, getPostsByCategory } = useAuth();
+  const { getRecentPosts, getPostsByCategory, loading } = useAuth();
   const [activeTab, setActiveTab] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
@@ -123,6 +138,8 @@ const PostsPage = () => {
     { value: POST_CATEGORIES.YOUTH_COMMITTEE, label: 'Youth Committee', activeColor: 'rgba(27,58,107,0.8)' },
     { value: POST_CATEGORIES.ADULT_COMMITTEE, label: 'Adult Committee', activeColor: 'rgba(100,40,10,0.85)' },
     { value: POST_CATEGORIES.INTERNATIONAL_OUTREACH, label: 'International Outreach', activeColor: 'rgba(186,0,33,0.8)' },
+    { value: POST_CATEGORIES.WRITEUPS, label: 'Writeups', activeColor: 'rgba(27,58,107,0.8)' },
+    { value: POST_CATEGORIES.PRIESTS_DESK, label: "Priest's Desk", activeColor: 'rgba(90,45,130,0.8)' },
   ];
 
   return (
@@ -184,7 +201,8 @@ const PostsPage = () => {
               type="text"
               placeholder="Search posts…"
               value={searchQuery}
-              onChange={e => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+              maxLength={200}
+              onChange={e => { setSearchQuery(sanitizeInput(e.target.value)); setCurrentPage(1); }}
               style={{
                 width: '100%',
                 paddingLeft: 48, paddingRight: 20, paddingTop: 13, paddingBottom: 13,
@@ -268,11 +286,27 @@ const PostsPage = () => {
 
           <Tabs.Content value={activeTab}>
             <div key={activeTab} className="hn-tab-enter">
-              {paginatedPosts.length > 0 ? (
+              {loading ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        borderRadius: 14, overflow: 'hidden', height: 280,
+                        background: 'rgba(255,255,255,0.12)',
+                        backdropFilter: 'blur(16px)',
+                        border: '1px solid rgba(255,255,255,0.2)',
+                        animation: 'pulse 1.5s ease-in-out infinite',
+                      }}
+                    />
+                  ))}
+                  <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
+                </div>
+              ) : paginatedPosts.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {paginatedPosts.map(post => (
                     <Link
-                      to={`/posts/${post.id}`}
+                      to={`/posts/${post.slug || post.id}`}
                       key={post.id}
                       style={{
                         textDecoration: 'none', display: 'block', borderRadius: 14,

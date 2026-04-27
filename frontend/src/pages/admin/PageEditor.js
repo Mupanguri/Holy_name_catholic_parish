@@ -9,6 +9,7 @@ import {
 } from '../../config/pageTemplates';
 import { BRANCHES } from '../../constants/CMSConstants';
 import { getFullUrl } from '../../services/api';
+import API_BASE_URL from '../../services/api';
 
 // Hierarchical Select Component for Page Paths
 const HierarchicalSelect = ({ options, value, onChange, label }) => {
@@ -295,6 +296,8 @@ const PageEditor = () => {
     changeDescription: '',
     parentId: null,
     branch: '',
+    attachedDocuments: [],
+    attachedVideos: [],
   });
 
   const [saving, setSaving] = useState(false);
@@ -327,6 +330,11 @@ const PageEditor = () => {
             if (Array.isArray(parsed)) sections = parsed;
           } catch {}
         }
+        const parseJsonField = val => {
+          if (Array.isArray(val)) return val;
+          if (typeof val === 'string') { try { return JSON.parse(val); } catch { return []; } }
+          return [];
+        };
         setFormData({
           title: page.title || '',
           slug: page.slug || '',
@@ -335,6 +343,8 @@ const PageEditor = () => {
           sections,
           changeDescription: '',
           branch: page.branch || '',
+          attachedDocuments: parseJsonField(page.attached_documents),
+          attachedVideos: parseJsonField(page.attached_videos),
         });
         const template = getAllTemplates().find(t => t.path === page.path);
         if (template) setSelectedTemplate(template);
@@ -448,7 +458,13 @@ const PageEditor = () => {
     if (!isNew && !formData.changeDescription.trim()) { alert('Please provide a description of changes'); return; }
 
     setSaving(true);
-    const pageData = { ...formData, content: JSON.stringify(formData.sections), templateId: selectedTemplate?.id };
+    const pageData = {
+      ...formData,
+      content: JSON.stringify(formData.sections),
+      templateId: selectedTemplate?.id,
+      attached_documents: formData.attachedDocuments,
+      attached_videos: formData.attachedVideos,
+    };
 
     try {
       if (isNew) {
@@ -466,6 +482,31 @@ const PageEditor = () => {
       alert(errorMessage);
     }
     setSaving(false);
+  };
+
+  const handleMediaUpload = async (e, type) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    const field = type === 'document' ? 'attachedDocuments' : 'attachedVideos';
+    const uploaded = await Promise.all(files.map(async file => {
+      const fd = new FormData();
+      fd.append('file', file);
+      const token = localStorage.getItem('adminToken');
+      const res = await fetch(`${API_BASE_URL}/api/upload`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: fd,
+      });
+      const data = await res.json();
+      return data.url || data.fileUrl || null;
+    }));
+    setFormData(prev => ({ ...prev, [field]: [...prev[field], ...uploaded.filter(Boolean)] }));
+    e.target.value = '';
+  };
+
+  const handleMediaRemove = (type, url) => {
+    const field = type === 'document' ? 'attachedDocuments' : 'attachedVideos';
+    setFormData(prev => ({ ...prev, [field]: prev[field].filter(u => u !== url) }));
   };
 
   const page = !isNew ? getPageById(parseInt(id)) : null;
@@ -804,6 +845,75 @@ const PageEditor = () => {
                 </div>
               </div>
             )}
+
+            {/* Media Attachments */}
+            <div className="pe-card" style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--theme-text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 14, fontFamily: 'Cinzel, serif' }}>
+                Attached Media
+              </div>
+
+              <div className="pe-field" style={{ marginBottom: 18 }}>
+                <label className="pe-label">Documents (PDF, DOC, DOCX)</label>
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx"
+                  multiple
+                  onChange={e => handleMediaUpload(e, 'document')}
+                  className="pe-input"
+                  style={{ padding: '6px 10px', cursor: 'pointer' }}
+                />
+                {formData.attachedDocuments.length > 0 && (
+                  <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {formData.attachedDocuments.map(url => (
+                      <div key={url} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'var(--theme-bg)', borderRadius: 6, border: '1px solid var(--theme-border)' }}>
+                        <span style={{ fontSize: 14 }}>📄</span>
+                        <a href={getFullUrl(url)} target="_blank" rel="noreferrer" style={{ flex: 1, fontSize: 12, color: 'var(--theme-accent)', textDecoration: 'underline', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {url.split('/').pop()}
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => handleMediaRemove('document', url)}
+                          style={{ flexShrink: 0, fontSize: 11, color: '#f87171', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', borderRadius: 4 }}
+                        >
+                          ✕ Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="pe-field">
+                <label className="pe-label">Videos (MP4, MOV, WebM)</label>
+                <input
+                  type="file"
+                  accept="video/*"
+                  multiple
+                  onChange={e => handleMediaUpload(e, 'video')}
+                  className="pe-input"
+                  style={{ padding: '6px 10px', cursor: 'pointer' }}
+                />
+                {formData.attachedVideos.length > 0 && (
+                  <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {formData.attachedVideos.map(url => (
+                      <div key={url} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'var(--theme-bg)', borderRadius: 6, border: '1px solid var(--theme-border)' }}>
+                        <span style={{ fontSize: 14 }}>🎬</span>
+                        <span style={{ flex: 1, fontSize: 12, color: 'var(--theme-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {url.split('/').pop()}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleMediaRemove('video', url)}
+                          style={{ flexShrink: 0, fontSize: 11, color: '#f87171', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', borderRadius: 4 }}
+                        >
+                          ✕ Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Sidebar */}

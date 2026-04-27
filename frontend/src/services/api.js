@@ -53,9 +53,21 @@ export const authAPI = {
     });
     return response.json();
   },
-  logout: () => {
-    localStorage.removeItem('adminToken');
-    localStorage.removeItem('adminUser');
+  logout: async () => {
+    try {
+      const token = localStorage.getItem('adminToken');
+      if (token) {
+        await fetch(`${API_BASE_URL}/api/auth/logout`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      }
+    } catch {
+      // Ignore network errors — local cleanup proceeds regardless
+    } finally {
+      localStorage.removeItem('adminToken');
+      localStorage.removeItem('adminUser');
+    }
   },
 };
 
@@ -170,6 +182,10 @@ export const postsAPI = {
   },
   getPublic: async () => {
     const response = await fetch(`${API_BASE_URL}/api/posts/public`);
+    return response.json();
+  },
+  getBySlug: async slug => {
+    const response = await fetch(`${API_BASE_URL}/api/posts/by-slug/${encodeURIComponent(slug)}`);
     return response.json();
   },
   getByCategory: async category => {

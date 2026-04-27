@@ -372,8 +372,9 @@ function ParchmentModal({ zone, pages, posts, onClose, onNavigate }) {
     return isAccessible;
   });
 
-  // Sub-pages: pages nested deeper than direct children - currently unused, for future nested pages
-  const subPages = [];
+  // Split into top-level pages and visually-nested sub-pages based on depth
+  const topPages = branchPages.filter(p => !p.level || p.level <= 1);
+  const subPages = branchPages.filter(p => p.level > 1);
 
   const relatedPosts = posts
     .filter(
@@ -497,7 +498,7 @@ function ParchmentModal({ zone, pages, posts, onClose, onNavigate }) {
               >
                 Pages
               </h3>
-              {branchPages.map(page => (
+              {topPages.map(page => (
                 <div
                   key={page.id}
                   className="pt-page-row"
@@ -537,45 +538,42 @@ function ParchmentModal({ zone, pages, posts, onClose, onNavigate }) {
               ))}
 
               {subPages.length > 0 && (
-                <div style={{ marginTop: 12 }}>
-                  <h4
-                    style={{
-                      margin: '0 0 8px',
-                      fontFamily: '"Cinzel", serif',
-                      fontSize: 10,
-                      letterSpacing: '0.1em',
-                      color: '#6b4a1e',
-                      textTransform: 'uppercase',
-                    }}
-                  >
-                    Sub-pages
-                  </h4>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {subPages.map(subPage => (
-                      <span
-                        key={subPage.id}
-                        onClick={() => {
-                          onClose();
-                          onNavigate(subPage.path || `/${subPage.slug}`);
-                        }}
-                        style={{
-                          padding: '4px 10px',
-                          background: 'rgba(139,105,20,0.08)',
-                          border: '1px solid rgba(139,105,20,0.2)',
-                          borderRadius: 12,
-                          fontSize: 11,
-                          color: '#5a3a10',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 4,
-                        }}
-                      >
-                        <span style={{ fontSize: 10 }}>🍃</span>
-                        {subPage.title}
-                      </span>
-                    ))}
+                <div style={{ marginTop: 4, marginLeft: 20, borderLeft: '2px solid rgba(139,105,20,0.30)', paddingLeft: 12 }}>
+                  <div style={{ margin: '4px 0 6px', fontSize: 10, letterSpacing: '0.1em', color: '#8b6914', textTransform: 'uppercase', fontFamily: '"Cinzel", serif' }}>
+                    Sub-branches
                   </div>
+                  {subPages.map(subPage => (
+                    <div
+                      key={subPage.id}
+                      className="pt-page-row"
+                      onClick={() => {
+                        onClose();
+                        onNavigate(subPage.path || `/${subPage.slug}`);
+                      }}
+                      style={{
+                        padding: '8px 8px',
+                        borderBottom: '1px solid rgba(139,105,20,0.10)',
+                        borderRadius: 2,
+                        transition: 'background 0.15s',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                    >
+                      <span style={{ fontSize: 10, color: '#8b6914' }}>↳</span>
+                      <span style={{ fontSize: 10 }}>🍃</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 12.5, color: '#4a2e0a', lineHeight: 1.5 }}>
+                          {subPage.title}
+                        </div>
+                        {subPage.content && getPagePreview(subPage.content) && (
+                          <p style={{ margin: '2px 0 0', fontSize: 10.5, color: '#7a5a2e', fontStyle: 'italic' }}>
+                            {getPagePreview(subPage.content)}…
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

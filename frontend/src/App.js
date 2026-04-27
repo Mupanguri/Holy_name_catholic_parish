@@ -183,7 +183,7 @@ function App() {
               />
 
               <Route
-                path="/posts/:id"
+                path="/posts/:slug"
                 element={
                   <PublicLayout>
                     <PostDetailPage />

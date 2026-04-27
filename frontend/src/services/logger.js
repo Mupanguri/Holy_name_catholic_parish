@@ -617,15 +617,17 @@ const initializeTracking = () => {
     url: window.location.href,
   });
 
-  console.log(
-    '%c🔍 Enhanced Logger Active',
-    'background:#1a1a2e;color:#e94560;padding:4px 10px;border-radius:4px;font-weight:bold'
-  );
-  console.log(
-    '%c   Auth · Fetch · XHR · Upload · Session · Media counter tracking enabled',
-    'color:#888'
-  );
-  console.log('%c   Call logger.printSummary() to inspect captured logs', 'color:#888');
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(
+      '%c🔍 Enhanced Logger Active',
+      'background:#1a1a2e;color:#e94560;padding:4px 10px;border-radius:4px;font-weight:bold'
+    );
+    console.log(
+      '%c   Auth · Fetch · XHR · Upload · Session · Media counter tracking enabled',
+      'color:#888'
+    );
+    console.log('%c   Call logger.printSummary() to inspect captured logs', 'color:#888');
+  }
 };
 
 export default logger;

@@ -39,10 +39,13 @@ const performanceLogFile = getLogFilePath('performance');
 const frontendLogFile = getLogFilePath('frontend');
 const databaseLogFile = getLogFilePath('database');
 
+const isProd = process.env.NODE_ENV === 'production';
+
 // Write to log file
 const writeToLog = (filePath, level, message, data = null) => {
     const timestamp = getTimestamp();
-    let logEntry = `[${timestamp}] [${level.toUpperCase()}] ${message}`;
+    const safeMessage = String(message).replace(/[\r\n]/g, ' ').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+    let logEntry = `[${timestamp}] [${level.toUpperCase()}] ${safeMessage}`;
 
     if (data) {
         if (data instanceof Error) {
@@ -62,7 +65,9 @@ const writeToLog = (filePath, level, message, data = null) => {
 
     fs.appendFileSync(filePath, logEntry);
 
-    // Also output to console with colors
+    // In production: only print errors to console; everything else goes to files only
+    if (isProd && level !== 'ERROR') return;
+
     const colors = {
         INFO: '\x1b[36m',     // Cyan
         WARN: '\x1b[33m',     // Yellow

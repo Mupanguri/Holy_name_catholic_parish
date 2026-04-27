@@ -216,7 +216,6 @@ export const AuthProvider = ({ children }) => {
   const login = async (username, password) => {
     try {
       const result = await authAPI.login(username, password);
-      console.log('Login result:', result);
       if (result.success) {
         setCurrentUser(result.user);
         localStorage.setItem('adminToken', result.token);
@@ -225,27 +224,25 @@ export const AuthProvider = ({ children }) => {
         try {
           await loadAllData();
         } catch (e) {
-          console.log('Data load error (non-critical):', e.message);
+          // non-critical
         }
         return { success: true, user: result.user };
       }
-      return { success: false, error: result.error || 'Invalid credentials' };
+      return { success: false, error: result.error || 'Invalid credentials', attack_detected: !!result.attack_detected };
     } catch (error) {
-      console.log('Login error:', error);
       return { success: false, error: error.message };
     }
   };
 
   // Logout
   const logout = async () => {
+    await authAPI.logout(); // blacklists the token server-side, then clears localStorage
     setCurrentUser(null);
     setPages([]);
     setPosts([]);
     setMedia([]);
     setSubmissions([]);
     setTasks([]);
-    localStorage.removeItem('adminToken');
-    localStorage.removeItem('adminUser');
     await loadPublicData();
   };
 
@@ -320,6 +317,7 @@ export const AuthProvider = ({ children }) => {
   const getHiddenPosts = () => (posts || []).filter(p => p.visible === false);
   const getDraftPosts = () => (posts || []).filter(p => p.status === 'draft');
   const getPostById = id => (posts || []).find(p => p.id === id || p.id === parseInt(id));
+  const getPostBySlug = slug => (posts || []).find(p => p.slug === slug);
 
   // Get recent posts sorted by date (for public display)
   const getRecentPosts = (count = 6) => {
@@ -705,6 +703,7 @@ export const AuthProvider = ({ children }) => {
     getHiddenPosts,
     getDraftPosts,
     getPostById,
+    getPostBySlug,
     getRecentPosts,
     getPostsByCategory,
     createPost,

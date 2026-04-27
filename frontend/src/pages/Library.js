@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import GlobalTheme from '../components/GlobalTheme';
 import { getFullUrl } from '../services/api';
+import { sanitizeInput } from '../utils/sanitize';
 
 const isPdf = name => (name || '').toLowerCase().endsWith('.pdf');
 
@@ -68,12 +69,34 @@ const Library = () => {
   const { getAllMedia, getMediaByCategory, getApprovedVideoLinks } = useAuth();
   const [activeCategory, setActiveCategory] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [publicMedia, setPublicMedia] = useState([]);
+  const [publicVideoLinks, setPublicVideoLinks] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const allMedia = getAllMedia();
-  const imageMedia = getMediaByCategory('images');
-  const documentMedia = getMediaByCategory('documents');
-  const videoMedia = getMediaByCategory('videos');
-  const approvedVideoLinks = getApprovedVideoLinks();
+  React.useEffect(() => {
+    const base = process.env.REACT_APP_API_URL || '';
+    Promise.all([
+      fetch(`${base}/api/media?limit=1000`)
+        .then(r => r.json())
+        .then(d => setPublicMedia(Array.isArray(d) ? d : d.data || []))
+        .catch(() => {}),
+      fetch(`${base}/api/video-links/public`)
+        .then(r => r.json())
+        .then(d => setPublicVideoLinks(Array.isArray(d) ? d : []))
+        .catch(() => {}),
+    ]).finally(() => setLoading(false));
+  }, []);
+
+  const authMedia = getAllMedia();
+  const authVideoLinks = getApprovedVideoLinks();
+  const mergedMedia = authMedia.length > 0 ? authMedia : publicMedia;
+  const mergedVideoLinks = authVideoLinks.length > 0 ? authVideoLinks : publicVideoLinks;
+
+  const allMedia = mergedMedia;
+  const imageMedia = mergedMedia.filter(m => m.category === 'images');
+  const documentMedia = mergedMedia.filter(m => m.category === 'documents');
+  const videoMedia = mergedMedia.filter(m => m.category === 'videos');
+  const approvedVideoLinks = mergedVideoLinks;
 
   const getFilteredMedia = () => {
     let media =
@@ -162,7 +185,8 @@ const Library = () => {
           type="text"
           placeholder="Search files..."
           value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)}
+          maxLength={200}
+          onChange={e => setSearchTerm(sanitizeInput(e.target.value))}
           className="w-full px-6 py-3 border-2 border-[#1B3A6B]/20 rounded-full focus:outline-none focus:border-[#1B3A6B]"
         />
       </div>
@@ -339,7 +363,17 @@ const Library = () => {
             <div className="relative p-6">
               <h1 className="hn-section-heading">Library</h1>
               <p className="hn-section-sub">Resources and media from Holy Name Parish</p>
-              {content}
+              {loading ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '64px 0', gap: 16 }}>
+                  <div style={{
+                    width: 48, height: 48, border: '4px solid #e5e7eb',
+                    borderTop: '4px solid #1B3A6B', borderRadius: '50%',
+                    animation: 'spin 1s linear infinite',
+                  }} />
+                  <p style={{ color: '#6b7280' }}>Loading library…</p>
+                  <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                </div>
+              ) : content}
             </div>
           </div>
         </div>

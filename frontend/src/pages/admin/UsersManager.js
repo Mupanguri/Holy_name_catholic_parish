@@ -4,6 +4,90 @@ import { useAuth, ROLES } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import toast from '../../constants/toast';
 
+// ── Copy-to-clipboard button ────────────────────────────────────────────────
+const CopyButton = ({ value }) => {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(value).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <button type="button" onClick={copy} className="um-copy-btn">
+      {copied ? '✓ Copied' : 'Copy'}
+    </button>
+  );
+};
+
+// ── Canvas-based PNG download (no external dependency) ──────────────────────
+const downloadCredentialsPNG = ({ name, username, password }) => {
+  const W = 640, H = 390;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  // White card
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, W, H);
+
+  // Top accent bar
+  ctx.fillStyle = '#1B3A6B';
+  ctx.fillRect(0, 0, W, 6);
+
+  // Header
+  ctx.fillStyle = '#1B3A6B';
+  ctx.font = 'bold 15px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('HOLY NAME CATHOLIC CHURCH · HARARE', W / 2, 36);
+  ctx.fillStyle = '#6b7280';
+  ctx.font = '12px sans-serif';
+  ctx.fillText('Admin Portal — Login Credentials', W / 2, 56);
+
+  // Divider
+  ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(40, 70); ctx.lineTo(W - 40, 70); ctx.stroke();
+
+  // Title + subtitle
+  ctx.fillStyle = '#111827'; ctx.font = 'bold 19px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('Save your login details', 40, 104);
+  ctx.fillStyle = '#6b7280'; ctx.font = '13px sans-serif';
+  ctx.fillText(`Account created for: ${name}`, 40, 126);
+  ctx.fillText('Store these somewhere safe — the password will not be shown again.', 40, 144);
+
+  // Field helper
+  const drawField = (label, value, y) => {
+    ctx.fillStyle = '#f9fafb'; ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(40, y, W - 80, 52, 8) : ctx.rect(40, y, W - 80, 52);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#6b7280'; ctx.font = '10px sans-serif';
+    ctx.fillText(label.toUpperCase(), 56, y + 17);
+    ctx.fillStyle = '#111827'; ctx.font = '600 14px monospace';
+    ctx.fillText(value, 56, y + 38);
+  };
+
+  drawField('Username', username, 158);
+  drawField('Password', password, 220);
+
+  // Warning box
+  ctx.fillStyle = '#fffbeb'; ctx.strokeStyle = '#fcd34d'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect ? ctx.roundRect(40, 284, W - 80, 44, 8) : ctx.rect(40, 284, W - 80, 44);
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#92400e'; ctx.font = '12px sans-serif';
+  ctx.fillText('⚠  Keep this safe. Do not share it. Login at holynamemabelreign.org/admin', 56, 311);
+
+  // Footer
+  ctx.fillStyle = '#9ca3af'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(`Generated ${new Date().toLocaleString()}`, W / 2, 372);
+
+  // Trigger download
+  const link = document.createElement('a');
+  link.download = `holy-name-credentials-${username}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+};
+
 const UsersManager = () => {
   const { theme, colors } = useOutletContext() || {};
   const navigate = useNavigate();
@@ -12,6 +96,8 @@ const UsersManager = () => {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
+  const [credentialsModal, setCredentialsModal] = useState(null); // { username, password, name }
+  const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
     username: '',
     password: '',
@@ -53,10 +139,16 @@ const UsersManager = () => {
 
   const handleSubmit = async e => {
     e.preventDefault();
+    const isNew = !editingUser;
     const url = editingUser
       ? `${api.baseUrl}/api/users/${editingUser.id}`
       : `${api.baseUrl}/api/users`;
     const method = editingUser ? 'PUT' : 'POST';
+
+    // Capture plain-text credentials before any state resets
+    const capturedUsername = formData.username;
+    const capturedPassword = formData.password;
+    const capturedName = formData.name;
 
     try {
       const token = localStorage.getItem('adminToken');
@@ -68,7 +160,13 @@ const UsersManager = () => {
       if (response.ok) {
         fetchUsers();
         setShowModal(false);
-        resetForm();
+        if (isNew) {
+          // Show the save-credentials modal instead of silently closing
+          setShowPassword(false);
+          setCredentialsModal({ username: capturedUsername, password: capturedPassword, name: capturedName });
+        } else {
+          resetForm();
+        }
       } else {
         const error = await response.json();
         toast.error(error.error || 'Failed to save user');
@@ -218,6 +316,57 @@ const UsersManager = () => {
         .um-modal-btn-cancel:hover { background: rgba(168,204,232,0.1); color: rgba(168,204,232,0.8); }
         .um-modal-btn-primary { background: rgba(27,58,107,0.7); border: 1px solid rgba(42,96,153,0.3); color: #a8cce8; }
         .um-modal-btn-primary:hover { background: rgba(42,96,153,0.5); }
+
+        /* ── Credentials modal (light theme) ── */
+        .um-cred-overlay {
+          position: fixed; inset: 0; background: rgba(0,0,0,0.75);
+          display: flex; align-items: center; justify-content: center;
+          z-index: 60; padding: 24px; backdrop-filter: blur(6px);
+        }
+        .um-cred-modal {
+          background: #ffffff; border-radius: 18px;
+          width: 100%; max-width: 460px; padding: 32px;
+          box-shadow: 0 32px 100px rgba(0,0,0,0.5);
+          font-family: 'Inter', sans-serif; color: #111827;
+        }
+        .um-cred-title { font-size: 19px; font-weight: 700; color: #111827; margin-bottom: 8px; }
+        .um-cred-sub { font-size: 13px; color: #6b7280; line-height: 1.55; margin-bottom: 24px; }
+        .um-cred-label { font-size: 10.5px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #9ca3af; margin-bottom: 6px; }
+        .um-cred-field-row {
+          display: flex; align-items: center; gap: 8px;
+          background: #f9fafb; border: 1px solid #e5e7eb;
+          border-radius: 10px; padding: 10px 14px; margin-bottom: 14px;
+        }
+        .um-cred-value { flex: 1; font-family: monospace; font-size: 14px; color: #111827; word-break: break-all; }
+        .um-copy-btn {
+          flex-shrink: 0; padding: 5px 12px; border-radius: 6px; font-size: 12px; font-weight: 600;
+          background: #e0e7ff; color: #3730a3; border: none; cursor: pointer;
+          font-family: 'Inter', sans-serif; transition: background 0.15s;
+        }
+        .um-copy-btn:hover { background: #c7d2fe; }
+        .um-eye-btn {
+          flex-shrink: 0; background: none; border: none; cursor: pointer;
+          color: #9ca3af; padding: 2px 4px; line-height: 1; font-size: 16px;
+        }
+        .um-eye-btn:hover { color: #6b7280; }
+        .um-cred-warn {
+          background: #fffbeb; border: 1px solid #fcd34d; border-radius: 10px;
+          padding: 12px 14px; font-size: 13px; color: #92400e; line-height: 1.5;
+          margin-bottom: 22px;
+        }
+        .um-cred-png-btn {
+          width: 100%; padding: 12px; border-radius: 10px; font-size: 14px; font-weight: 600;
+          background: #16a34a; color: #ffffff; border: none; cursor: pointer;
+          font-family: 'Inter', sans-serif; transition: background 0.15s; margin-bottom: 10px;
+          display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .um-cred-png-btn:hover { background: #15803d; }
+        .um-cred-confirm-btn {
+          width: 100%; padding: 12px; border-radius: 10px; font-size: 14px; font-weight: 600;
+          background: #1B3A6B; color: #ffffff; border: none; cursor: pointer;
+          font-family: 'Inter', sans-serif; transition: background 0.15s;
+        }
+        .um-cred-confirm-btn:hover { background: #15316b; }
       `}</style>
 
       <div className="um-root">
@@ -313,6 +462,67 @@ const UsersManager = () => {
                   })}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {/* ── Save Credentials Modal ── */}
+        {credentialsModal && (
+          <div className="um-cred-overlay">
+            <div className="um-cred-modal">
+              <div className="um-cred-title">Save your login details</div>
+              <div className="um-cred-sub">
+                Account created for <strong>{credentialsModal.name}</strong>.<br />
+                Copy these details, download them as a PNG, or both — then store them
+                somewhere safe. <strong>The password will not be shown again.</strong>
+              </div>
+
+              <div className="um-cred-label">Username</div>
+              <div className="um-cred-field-row">
+                <span className="um-cred-value">{credentialsModal.username}</span>
+                <CopyButton value={credentialsModal.username} />
+              </div>
+
+              <div className="um-cred-label">Password</div>
+              <div className="um-cred-field-row">
+                <span className="um-cred-value">
+                  {showPassword ? credentialsModal.password : '•'.repeat(Math.min(credentialsModal.password.length, 20))}
+                </span>
+                <button
+                  type="button"
+                  className="um-eye-btn"
+                  onClick={() => setShowPassword(v => !v)}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? '🙈' : '👁'}
+                </button>
+                <CopyButton value={credentialsModal.password} />
+              </div>
+
+              <div className="um-cred-warn">
+                ⚠ If you lose this password, you will need to reset it from the Users
+                page — the user cannot reset it themselves.
+              </div>
+
+              <button
+                type="button"
+                className="um-cred-png-btn"
+                onClick={() => downloadCredentialsPNG(credentialsModal)}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" />
+                  <polyline points="21 15 16 10 5 21" />
+                </svg>
+                Save as image (PNG)
+              </button>
+
+              <button
+                type="button"
+                className="um-cred-confirm-btn"
+                onClick={() => { setCredentialsModal(null); resetForm(); }}
+              >
+                I have saved these — continue
+              </button>
             </div>
           </div>
         )}

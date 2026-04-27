@@ -1,4 +1,0 @@
-        if (req.user.role === "soccom_admin") {
-            params.push("approved");
-            query += ` AND status = $${params.length}`;
-        }

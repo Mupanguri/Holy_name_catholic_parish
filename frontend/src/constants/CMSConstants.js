@@ -11,6 +11,8 @@ export const POST_CATEGORIES = {
   ADULT_COMMITTEE: 'Adult Committee',
   BULLETIN: 'Bulletin',
   INTERNATIONAL_OUTREACH: 'International Outreach',
+  WRITEUPS: 'Writeups',
+  PRIESTS_DESK: "Priest's Desk",
 };
 
 // Community branches for filtering

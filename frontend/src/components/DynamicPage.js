@@ -98,7 +98,14 @@ const DynamicPage = ({ slug, path }) => {
     const strVal = value.toString().trim();
     if (!strVal) return null;
 
-    if (typeof value === 'string' && (value.startsWith('http') || value.startsWith('/uploads/') || value.startsWith('/images/'))) {
+    const isImageUrl = typeof value === 'string' && (
+      value.startsWith('http') ||
+      value.startsWith('/uploads/') ||
+      value.startsWith('/images/') ||
+      value.startsWith('/media/') ||
+      /\.(jpe?g|png|gif|webp|svg|bmp|avif)(\?.*)?$/i.test(value)
+    );
+    if (isImageUrl) {
       return (
         <div key={fieldId} className="mb-4">
           <img src={getFullUrl(value)} alt={fieldId} className="max-w-full h-auto rounded-lg shadow-md" onError={e => (e.target.style.display = 'none')} />

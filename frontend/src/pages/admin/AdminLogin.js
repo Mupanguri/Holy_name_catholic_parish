@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { sanitizeInput } from '../../utils/sanitize';
 
 const AdminLogin = () => {
   const { theme, colors } = useOutletContext() || {};
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [blocked, setBlocked] = useState(false);
   const [loading, setLoading] = useState(false);
   const [mousePos, setMousePos] = useState({ x: 50, y: 48 });
   const [phase, setPhase] = useState('idle'); // idle | cracking | opening | blazing | closing | reforming
@@ -43,12 +45,18 @@ const AdminLogin = () => {
 
   const handleSubmit = async e => {
     e.preventDefault();
+    if (blocked) return;
     setError('');
     setLoading(true);
-    const result = await login(username, password);
+    const cleanUsername = sanitizeInput(username);
+    const cleanPassword = sanitizeInput(password);
+    const result = await login(cleanUsername, cleanPassword);
     setLoading(false);
     if (result.success) {
       triggerCrucifix();
+    } else if (result.attack_detected) {
+      setBlocked(true);
+      setError('This session has been blocked due to a security violation. The incident has been reported.');
     } else {
       setError(result.error || 'Login failed');
     }
@@ -496,7 +504,7 @@ const AdminLogin = () => {
                     className="al-input"
                     placeholder="Enter your username"
                     required
-                    disabled={animating}
+                    disabled={animating || blocked}
                   />
                 </div>
                 <div className="al-field">
@@ -508,10 +516,10 @@ const AdminLogin = () => {
                     className="al-input"
                     placeholder="Enter your password"
                     required
-                    disabled={animating}
+                    disabled={animating || blocked}
                   />
                 </div>
-                <button type="submit" disabled={loading || animating} className="al-btn">
+                <button type="submit" disabled={loading || animating || blocked} className="al-btn">
                   {loading ? 'Verifying...' : animating ? '✝' : 'Sign In'}
                 </button>
               </form>

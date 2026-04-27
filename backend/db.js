@@ -4,7 +4,7 @@ const bcrypt = require('bcrypt');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false' } : false
 });
 
 const dbName = process.env.DB_NAME || 'holy_name_parish';
@@ -14,7 +14,7 @@ const createDatabase = async () => {
   // First connect to postgres to check/create the database
   const adminPool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false' } : false
   });
 
   try {
@@ -310,6 +310,20 @@ const createTables = async dbPool => {
       console.log('Bulletin columns verified');
     } catch (e) {
       console.log('Bulletin migration note:', e.message);
+    }
+
+    // Post slug column
+    try {
+      await dbPool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS slug VARCHAR(255) UNIQUE`);
+      // Backfill existing posts: slug = sanitised-title + '-' + id
+      await dbPool.query(`
+        UPDATE posts
+        SET slug = LOWER(REGEXP_REPLACE(REGEXP_REPLACE(title, '[^a-zA-Z0-9\\s-]', '', 'g'), '\\s+', '-', 'g')) || '-' || id
+        WHERE slug IS NULL
+      `);
+      console.log('Post slug column verified');
+    } catch (e) {
+      console.log('Post slug migration note:', e.message);
     }
 
     // Media attachment columns

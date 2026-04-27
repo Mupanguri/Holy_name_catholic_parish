@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import GlobalTheme from '../components/GlobalTheme';
 import { LoadingSpinner, ErrorBanner } from './shared';
 import NoticesCard from './NoticesCard';
+import { getFullUrl } from '../services/api';
 
 const Section = ({ title, subtitle, children }) => (
   <GlobalTheme>
@@ -48,6 +49,33 @@ const Home = () => {
 
   return (
     <div style={{ overflowX: 'hidden' }}>
+      <style>{`
+        .hn-home-posts-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 24px;
+          max-width: 1000px;
+          margin: 0 auto;
+        }
+        .hn-home-library-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 16px;
+          max-width: 900px;
+          margin: 0 auto 32px;
+        }
+        @media (max-width: 767px) {
+          .hn-home-posts-grid {
+            grid-template-columns: 1fr;
+            gap: 16px;
+          }
+          .hn-home-library-grid {
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+          }
+          .hn-home-post-img { height: 200px !important; }
+        }
+      `}</style>
       <Slideshow />
 
       {/* ── Stay Connected ── */}
@@ -61,7 +89,7 @@ const Home = () => {
             <div className="hn-rule-line rev" />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 24 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 24 }}>
             {/* Mass Times */}
             <div className="hn-card">
               <div className="hn-card-header hn-card-header-blue">
@@ -164,18 +192,18 @@ const Home = () => {
       {/* ── Recent Posts ── */}
       <Section title="Recent Posts" subtitle="Latest news and updates from Holy Name Parish">
         {recentPosts.length > 0 ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24, maxWidth: 1000, margin: '0 auto' }}>
+          <div className="hn-home-posts-grid">
             {recentPosts.map(post => (
               <Link
-                to={`/posts/${post.id}`}
+                to={`/posts/${post.slug || post.id}`}
                 key={post.id}
                 className="hn-post-card"
                 style={{ textDecoration: 'none', display: 'block' }}
               >
                 {post.images && post.images.length > 0 && (
-                  <div style={{ height: 160, overflow: 'hidden' }}>
+                  <div className="hn-home-post-img" style={{ height: 160, overflow: 'hidden' }}>
                     <img
-                      src={process.env.PUBLIC_URL + post.images[0]}
+                      src={getFullUrl(post.images[0])}
                       alt={post.title}
                       style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                     />
@@ -187,9 +215,9 @@ const Home = () => {
                     {post.title}
                   </h3>
                   <p style={{ fontSize: 13, color: '#6b7280', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                    {post.excerpt || post.content.substring(0, 80) + '...'}
+                    {post.excerpt || (post.content || '').substring(0, 100) + '...'}
                   </p>
-                  <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 12 }}>{formatDate(post.date)}</p>
+                  <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 12 }}>{formatDate(post.date || post.created_at)}</p>
                 </div>
               </Link>
             ))}
@@ -209,7 +237,7 @@ const Home = () => {
 
       {/* ── Library Preview ── */}
       <Section title="Parish Library" subtitle="Photos, documents and media from Holy Name Parish">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, maxWidth: 900, margin: '0 auto 32px' }}>
+        <div className="hn-home-library-grid">
           {[15, 16, 17, 18, 19, 20].map(n => (
             <Link
               key={n}

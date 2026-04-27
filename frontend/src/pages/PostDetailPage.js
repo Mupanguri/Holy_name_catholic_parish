@@ -1,40 +1,70 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ArrowLeftIcon } from '@radix-ui/react-icons';
-import { getFullUrl } from '../services/api';
+import { getFullUrl, postsAPI } from '../services/api';
 
 const PostDetailPage = () => {
-  const { id } = useParams();
-  const { getPostById } = useAuth();
+  const { slug } = useParams();
+  const { getPostById, getPostBySlug } = useAuth();
+  const [post, setPost] = useState(null);
+  const [notFound, setNotFound] = useState(false);
 
-  const post = getPostById(id);
+  useEffect(() => {
+    const isNumeric = /^\d+$/.test(slug);
+    const contextPost = isNumeric ? getPostById(slug) : getPostBySlug(slug);
+    if (contextPost) {
+      setPost(contextPost);
+      return;
+    }
+    // Not in context yet — fetch from API directly
+    const fetchPost = async () => {
+      try {
+        const data = isNumeric
+          ? await fetch(`/api/posts/${slug}`).then(r => r.json())
+          : await postsAPI.getBySlug(slug);
+        if (data && data.id) {
+          setPost(data);
+        } else {
+          setNotFound(true);
+        }
+      } catch {
+        setNotFound(true);
+      }
+    };
+    fetchPost();
+  }, [slug, getPostById, getPostBySlug]);
 
-  // Get related posts from the same category
-  const relatedPosts = post?.category ? [] : [];
-
-  if (!post) {
-    return (
-      <div className="min-h-screen bg-gray-50 py-8 px-4">
-        <div className="max-w-4xl mx-auto text-center">
-          <h1 className="text-2xl font-bold text-gray-800 mb-4">Post Not Found</h1>
-          <Link to="/posts" className="text-[#1B3A6B] hover:underline">
-            Back to Posts
-          </Link>
+  if (notFound || (!post && slug)) {
+    // Show not-found only once we know it truly isn't available
+    if (notFound) {
+      return (
+        <div className="min-h-screen bg-gray-50 py-8 px-4">
+          <div className="max-w-4xl mx-auto text-center">
+            <h1 className="text-2xl font-bold text-gray-800 mb-4">Post Not Found</h1>
+            <Link to="/posts" className="text-[#1B3A6B] hover:underline">
+              Back to Posts
+            </Link>
+          </div>
         </div>
+      );
+    }
+    // Still loading
+    return (
+      <div className="min-h-screen bg-gray-50 py-8 px-4 flex items-center justify-center">
+        <div className="text-gray-500">Loading…</div>
       </div>
     );
   }
+
+  if (!post) return null;
 
   const formatDate = dateString => {
     const options = { year: 'numeric', month: 'long', day: 'numeric' };
     return new Date(dateString).toLocaleDateString('en-US', options);
   };
 
-  // Get guild channel name if applicable
-  const getGuildChannelName = slug => {
-    return slug || '';
-  };
+  const relatedPosts = [];
 
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4">
@@ -47,33 +77,17 @@ const PostDetailPage = () => {
 
         {/* Post Header */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          {/* Category Badge */}
           <span className="inline-block px-3 py-1 text-sm font-semibold text-white bg-[#1B3A6B] rounded mb-4">
             {post.category}
           </span>
-
-          {/* Title */}
           <h1 className="text-3xl md:text-4xl font-bold text-gray-800 mb-4">{post.title}</h1>
-
-          {/* Meta Info */}
           <div className="flex flex-wrap gap-4 text-gray-600 mb-4">
             <span className="flex items-center">
-              <span className="font-semibold">Author:</span> {post.author}
+              <span className="font-semibold">Author:</span> {post.author_name || post.author}
             </span>
             <span className="flex items-center">
-              <span className="font-semibold">Date:</span> {formatDate(post.date)}
+              <span className="font-semibold">Date:</span> {formatDate(post.date || post.created_at)}
             </span>
-            {post.guildChannel && (
-              <span className="flex items-center">
-                <span className="font-semibold">Posted in:</span>{' '}
-                <Link
-                  to={`/communities/${post.guildCategory || 'general'}/${post.guildChannel}`}
-                  className="text-[#BA0021] hover:underline ml-1"
-                >
-                  {getGuildChannelName(post.guildChannel)}
-                </Link>
-              </span>
-            )}
           </div>
         </div>
 
@@ -81,17 +95,26 @@ const PostDetailPage = () => {
         {post.images && post.images.length > 0 && (
           <div className="bg-white rounded-lg shadow-md p-6 mb-6">
             <h2 className="text-xl font-bold text-gray-800 mb-4">Images</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {post.images.map((image, index) => (
-                <div key={index} className="rounded-lg overflow-hidden">
-                  {/* eslint-disable-next-line jsx-a11y/img-redundant-alt */}
-                  <img
-                    src={getFullUrl(image)}
-                    alt={`${post.title} - Photo ${index + 1}`}
-                    className="w-full h-auto object-cover"
-                  />
-                </div>
-              ))}
+            <div className="flex flex-col gap-6">
+              {post.images.map((image, index) => {
+                const rawLayouts = post.image_layouts || {};
+                const layouts = typeof rawLayouts === 'string' ? (() => { try { return JSON.parse(rawLayouts); } catch { return {}; } })() : rawLayouts;
+                const layout = layouts[image] || { position: 'center', size: 'medium' };
+
+                const maxWidth = { small: '320px', medium: '600px', full: '100%' }[layout.size] || '600px';
+                const margin = { left: '0 auto 0 0', center: '0 auto', right: '0 0 0 auto' }[layout.position] || '0 auto';
+
+                return (
+                  <div key={index} style={{ maxWidth, margin, width: '100%' }} className="rounded-lg overflow-hidden">
+                    {/* eslint-disable-next-line jsx-a11y/img-redundant-alt */}
+                    <img
+                      src={getFullUrl(image)}
+                      alt={`${post.title} - Photo ${index + 1}`}
+                      className="w-full h-auto object-cover"
+                    />
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -100,7 +123,7 @@ const PostDetailPage = () => {
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <h2 className="text-xl font-bold text-gray-800 mb-4">Content</h2>
           <div className="prose prose-lg max-w-none text-gray-700">
-            {post.content.split('\n').map((paragraph, index) => (
+            {(post.content || '').split('\n').map((paragraph, index) => (
               <p key={index} className="mb-4">
                 {paragraph}
               </p>
@@ -130,39 +153,6 @@ const PostDetailPage = () => {
           </div>
         )}
 
-        {/* Gallery Integration - Images from this post */}
-        {post && post.image && (
-          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-            <h2 className="text-xl font-bold text-gray-800 mb-4">Gallery (From Posts)</h2>
-            <p className="text-gray-600 mb-4 text-sm">
-              These images are also available in the Gallery section
-            </p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {(post.images || []).map(image => (
-                <Link
-                  to={`/gallery?post=${post.id}`}
-                  key={image.id}
-                  className="block rounded-lg overflow-hidden hover:opacity-90 transition-opacity"
-                >
-                  <img
-                    src={getFullUrl(image.src)}
-                    alt={image.alt}
-                    className="w-full h-32 object-cover"
-                  />
-                </Link>
-              ))}
-            </div>
-            <div className="mt-4">
-              <Link
-                to={`/gallery?post=${post.id}`}
-                className="inline-block px-4 py-2 bg-[#1B3A6B] text-white rounded-lg hover:bg-[#004b7c] transition-colors"
-              >
-                View in Gallery
-              </Link>
-            </div>
-          </div>
-        )}
-
         {/* Related Posts */}
         {relatedPosts.length > 0 && (
           <div className="bg-white rounded-lg shadow-md p-6">
@@ -170,7 +160,7 @@ const PostDetailPage = () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {relatedPosts.map(relatedPost => (
                 <Link
-                  to={`/posts/${relatedPost.id}`}
+                  to={`/posts/${relatedPost.slug || relatedPost.id}`}
                   key={relatedPost.id}
                   className="block bg-gray-50 rounded-lg p-4 hover:bg-gray-100 transition-colors"
                 >
