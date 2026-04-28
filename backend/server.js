@@ -242,16 +242,8 @@ const SAFE_EXT_MAP = {
   'text/plain': '.txt', 'text/csv': '.csv',
 };
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadsDir);
-  },
-  filename: (req, file, cb) => {
-    // Use MIME-derived extension only — prevents path traversal via crafted filenames
-    const safeExt = SAFE_EXT_MAP[file.mimetype] || '.bin';
-    cb(null, uuidv4() + safeExt);
-  },
-});
+const { S3Storage } = require('./s3');
+const storage = new S3Storage();
 
 const upload = multer({
   storage,
@@ -1644,7 +1636,7 @@ app.post(
       const files = req.files || [];
       let uploaded = 0;
       for (const file of files) {
-        const url = `/uploads/${file.filename}`;
+        const url = file.location;
         await db.pool.query(
           'INSERT INTO media (name, type, url, size, category, uploaded_by, status, upload_type) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
           [file.originalname, 'image', url, String(file.size), 'images', req.user.name, 'pending', 'mass']
@@ -1736,7 +1728,7 @@ app.post('/api/documents/upload', authenticate, writeLimiter, upload.fields([{ n
     const { name, type, category, notes } = req.body;
     const file = req.files?.file?.[0];
     const coverFile = req.files?.cover_image?.[0];
-    const coverImageUrl = coverFile ? `/uploads/${coverFile.filename}` : null;
+    const coverImageUrl = coverFile ? coverFile.location : null;
     if (!file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
@@ -1779,7 +1771,7 @@ app.post('/api/documents/upload', authenticate, writeLimiter, upload.fields([{ n
         type || 'document',
         file.mimetype,
         file.size,
-        '/uploads/' + file.filename,
+        file.location,
         category || 'documents',
         req.user.id,
         req.user.name,
@@ -2426,7 +2418,7 @@ app.post(
   async (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-      const url = '/uploads/' + req.file.filename;
+      const url = req.file.location;
       res.json({ success: true, url });
     } catch (error) {
       res.status(500).json({ error: error.message });
